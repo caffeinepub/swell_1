@@ -1399,21 +1399,34 @@ function TideChart({
           {[
             { value: tideMax, y: toSVGY(tideMax) },
             { value: tideMin, y: toSVGY(tideMin) },
-          ].map(({ value, y }) => (
-            <text
-              key={value}
-              x={W - 4}
-              y={y}
-              fill="rgba(168,216,200,0.55)"
-              fontSize={10}
-              fontFamily="General Sans, sans-serif"
-              textAnchor="end"
-              dominantBaseline="middle"
-            >
-              {displayHeight(value).toFixed(1)}
-              {heightLabel}
-            </text>
-          ))}
+          ].map(({ value, y }) => {
+            const label = `${displayHeight(value).toFixed(1)}${heightLabel}`;
+            const labelW = label.length * 11;
+            return (
+              <g key={value}>
+                <rect
+                  x={W - labelW - 10}
+                  y={y - 13}
+                  width={labelW + 8}
+                  height={22}
+                  rx={4}
+                  fill="rgba(2,13,24,0.72)"
+                />
+                <text
+                  x={W - 8}
+                  y={y}
+                  fill="rgba(168,216,200,0.95)"
+                  fontSize={18}
+                  fontWeight="600"
+                  fontFamily="General Sans, sans-serif"
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          })}
         </svg>
       </div>
     </div>

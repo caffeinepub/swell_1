@@ -105,7 +105,8 @@ const STATUS_COLOR: Record<Status, string> = {
 };
 
 function dayName(dateStr: string): string {
-  const d = new Date(dateStr);
+  // Parse as local noon to avoid UTC-midnight timezone rollover (e.g. Sun -> Sat for US browsers)
+  const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 

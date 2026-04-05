@@ -1328,7 +1328,7 @@ function TideChart({
       </div>
       <div className="px-4 pb-4">
         <svg
-          viewBox={`0 0 ${W} ${H + 30}`}
+          viewBox={`0 0 ${W} ${H + 38}`}
           className="w-full"
           style={{ height: 200 }}
         >
@@ -1386,9 +1386,9 @@ function TideChart({
             <text
               key={label}
               x={(i / 4) * W}
-              y={H + 22}
+              y={H + 25}
               fill="rgba(168,216,200,0.5)"
-              fontSize={11}
+              fontSize={15}
               fontFamily="General Sans, sans-serif"
               textAnchor={i === 0 ? "start" : i === 4 ? "end" : "middle"}
             >

@@ -918,7 +918,7 @@ function PresetBar({
                   type="button"
                   onClick={() => loadSpot(spot)}
                   data-ocid={`preset.item.${i + 1}`}
-                  className="flex items-center gap-2 rounded-full pl-4 pr-8 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
+                  className="flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
                   style={{
                     background: isSelected
                       ? "var(--color-electric)"
@@ -935,20 +935,10 @@ function PresetBar({
                     // Prevent text selection during drag
                     userSelect: "none",
                   }}
-                  aria-label={`Load ${spot.name}, ${spot.country}`}
+                  aria-label={`Load ${spot.name}`}
                   aria-pressed={isSelected}
                 >
-                  <span className="truncate max-w-[120px]">{spot.name}</span>
-                  <span
-                    className="text-xs opacity-60 truncate max-w-[80px]"
-                    style={{
-                      color: isSelected
-                        ? "rgba(2,13,24,0.7)"
-                        : "var(--color-seafoam)",
-                    }}
-                  >
-                    {spot.country}
-                  </span>
+                  <span className="truncate max-w-[140px]">{spot.name}</span>
                 </button>
                 {/* Edit button overlaid on right edge */}
                 <button
@@ -1697,7 +1687,74 @@ export default function App() {
               </SheetTitle>
             </SheetHeader>
 
-            <div className="px-6 py-6 space-y-8">
+            <div className="px-6 py-6 space-y-8 overflow-y-auto">
+              {/* Saved Spots */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Your Saved Spots
+                </p>
+                <PresetBar
+                  presets={presets}
+                  setPresets={setPresets}
+                  selectedSpot={selectedSpot}
+                  loadSpot={(spot) => {
+                    loadSpot(spot);
+                    setSettingsOpen(false);
+                  }}
+                />
+                <div className="flex flex-col gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleUseMyLocation}
+                    disabled={locating}
+                    data-ocid="location.button"
+                    className="flex items-center gap-2 rounded-full px-5 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+                    style={{
+                      background: locating
+                        ? "rgba(0,180,216,0.1)"
+                        : "rgba(0,180,216,0.08)",
+                      border: "1px solid rgba(0,180,216,0.35)",
+                      color: "var(--color-electric)",
+                    }}
+                    aria-label="Use my current location to detect nearest surf conditions"
+                  >
+                    {locating ? (
+                      <div
+                        className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
+                        style={{
+                          borderColor: "var(--color-electric)",
+                          borderTopColor: "transparent",
+                        }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <LocateFixed
+                        size={15}
+                        className="flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span>
+                      {locating ? "Detecting location…" : "Use my location"}
+                    </span>
+                  </button>
+                  {locationError && (
+                    <p
+                      className="font-body text-xs px-1"
+                      style={{ color: "var(--color-coral)" }}
+                      role="alert"
+                    >
+                      {locationError}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
+
               {/* Wave Height */}
               <div className="space-y-3">
                 <p
@@ -1827,82 +1884,6 @@ export default function App() {
             >
               Read the ocean.
             </h1>
-
-            {/* Preset description */}
-            <p
-              className="font-body text-xs tracking-widest uppercase mb-3"
-              style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
-            >
-              Your saved spots
-            </p>
-
-            <PresetBar
-              presets={presets}
-              setPresets={setPresets}
-              selectedSpot={selectedSpot}
-              loadSpot={loadSpot}
-            />
-
-            {/* Current Location Button */}
-            <div className="mt-5 flex flex-col items-start gap-2">
-              <button
-                type="button"
-                onClick={handleUseMyLocation}
-                disabled={locating}
-                data-ocid="location.button"
-                className="flex items-center gap-2 rounded-full px-5 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
-                style={{
-                  background: locating
-                    ? "rgba(0,180,216,0.1)"
-                    : "rgba(0,180,216,0.08)",
-                  border: "1px solid rgba(0,180,216,0.35)",
-                  color: "var(--color-electric)",
-                }}
-                aria-label="Use my current location to detect nearest surf conditions"
-              >
-                {locating ? (
-                  <div
-                    className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
-                    style={{
-                      borderColor: "var(--color-electric)",
-                      borderTopColor: "transparent",
-                    }}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <LocateFixed
-                    size={15}
-                    className="flex-shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-                <span>
-                  {locating ? "Detecting location…" : "Use my location"}
-                </span>
-              </button>
-
-              {locationError && (
-                <p
-                  className="font-body text-xs px-1"
-                  style={{ color: "var(--color-coral)" }}
-                  data-ocid="location.error_state"
-                  role="alert"
-                >
-                  {locationError}
-                </p>
-              )}
-            </div>
-
-            {!selectedSpot && !locating && (
-              <p
-                className="mt-4 font-body text-sm"
-                style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
-              >
-                ↑ Tap a preset to load conditions, or click{" "}
-                <span style={{ color: "var(--color-electric)" }}>+</span> to add
-                a new spot
-              </p>
-            )}
           </div>
         </section>
 

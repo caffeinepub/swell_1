@@ -1107,13 +1107,10 @@ function CompassCard({ degrees }: { degrees: number }) {
           DIRECTION
         </span>
       </div>
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
-          className="font-display font-bold leading-none"
-          style={{
-            color: "var(--color-electric)",
-            fontSize: "clamp(1.6rem, 5vw, 2.4rem)",
-          }}
+          className="font-display font-extrabold text-white"
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
         >
           {degreesToCompass(degrees)}
         </span>

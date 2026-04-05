@@ -1046,7 +1046,7 @@ function StatCard({
 function CompassCard({ degrees }: { degrees: number }) {
   return (
     <div
-      className="relative flex flex-col items-center justify-center rounded-xl p-4 sm:p-6 flex-1 min-w-0 min-h-[140px]"
+      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1061,38 +1061,51 @@ function CompassCard({ degrees }: { degrees: number }) {
           boxShadow: `0 0 8px ${STATUS_COLOR.average}`,
         }}
       />
-      <div
-        style={{
-          transform: `rotate(${(degrees + 180) % 360}deg)`,
-          transition: "transform 0.4s ease",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-        className="w-20 h-20"
-      >
-        <svg
-          width="100%"
-          height="100%"
-          viewBox="0 0 20 20"
-          fill="none"
-          role="img"
-          aria-label="Wind from direction"
+      <div className="flex items-center gap-2">
+        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+          <Compass size={14} />
+        </span>
+        <span
+          className="text-xs font-body tracking-widest uppercase"
+          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
         >
-          <circle
-            cx="10"
-            cy="10"
-            r="9"
-            stroke="rgba(0,180,216,0.3)"
-            strokeWidth="1.5"
-          />
-          <polygon
-            points="10,2 13,14 10,12 7,14"
-            fill="var(--color-electric)"
-            opacity="0.9"
-          />
-          <circle cx="10" cy="10" r="1.5" fill="rgba(168,216,200,0.6)" />
-        </svg>
+          DIRECTION
+        </span>
+      </div>
+      <div className="flex flex-1 items-center justify-center">
+        <div
+          style={{
+            transform: `rotate(${(degrees + 180) % 360}deg)`,
+            transition: "transform 0.4s ease",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          className="w-14 h-14"
+        >
+          <svg
+            width="100%"
+            height="100%"
+            viewBox="0 0 20 20"
+            fill="none"
+            role="img"
+            aria-label="Wind from direction"
+          >
+            <circle
+              cx="10"
+              cy="10"
+              r="9"
+              stroke="rgba(0,180,216,0.3)"
+              strokeWidth="1.5"
+            />
+            <polygon
+              points="10,2 13,14 10,12 7,14"
+              fill="var(--color-electric)"
+              opacity="0.9"
+            />
+            <circle cx="10" cy="10" r="1.5" fill="rgba(168,216,200,0.6)" />
+          </svg>
+        </div>
       </div>
     </div>
   );

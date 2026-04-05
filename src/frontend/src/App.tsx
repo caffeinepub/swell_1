@@ -1873,19 +1873,24 @@ export default function App() {
         </Sheet>
 
         {/* HERO */}
-        <section className="px-6 md:px-12 pt-10 pb-8" data-ocid="hero.section">
-          <div className="max-w-7xl mx-auto">
-            <h1
-              className="font-display font-black text-white leading-none mb-8"
-              style={{
-                fontSize: "clamp(3rem, 8vw, 7rem)",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Read the ocean.
-            </h1>
-          </div>
-        </section>
+        {!selectedSpot && (
+          <section
+            className="px-6 md:px-12 pt-10 pb-8"
+            data-ocid="hero.section"
+          >
+            <div className="max-w-7xl mx-auto">
+              <h1
+                className="font-display font-black text-white leading-none mb-8"
+                style={{
+                  fontSize: "clamp(3rem, 8vw, 7rem)",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                Favorite Mother-In-Law's Ocean
+              </h1>
+            </div>
+          </section>
+        )}
 
         {/* DASHBOARD */}
         {selectedSpot && (

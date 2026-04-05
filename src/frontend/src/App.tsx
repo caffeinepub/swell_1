@@ -205,8 +205,17 @@ function loadTileOrder(): TileId[] {
       const migrated = [...parsed] as TileId[];
       if (!migrated.includes("tide")) migrated.push("tide");
       if (!migrated.includes("forecast")) migrated.push("forecast");
-      if (!migrated.includes("period"))
-        migrated.splice(migrated.indexOf("tide"), 0, "period");
+      if (!migrated.includes("period")) {
+        const afterAirTemp = migrated.indexOf("airTemp");
+        const afterWind = migrated.indexOf("wind");
+        const insertAt =
+          afterAirTemp !== -1
+            ? afterAirTemp + 1
+            : afterWind !== -1
+              ? afterWind + 1
+              : migrated.indexOf("tide");
+        migrated.splice(insertAt, 0, "period");
+      }
       return migrated;
     }
     return DEFAULT_TILE_ORDER;

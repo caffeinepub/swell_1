@@ -1641,7 +1641,7 @@ export default function App() {
                 className="font-body text-xs tracking-widest uppercase"
                 style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
               >
-                Sailing Conditions
+                SETTINGS
               </div>
               <button
                 type="button"

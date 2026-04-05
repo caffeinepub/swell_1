@@ -1399,18 +1399,12 @@ function TideChart({
             y1={0}
             x2={currentX}
             y2={H}
-            stroke="var(--color-average)"
+            stroke="#FFE033"
             strokeWidth={2}
             strokeDasharray="6 4"
             opacity={0.9}
           />
-          <circle
-            cx={currentX}
-            cy={4}
-            r={4}
-            fill="var(--color-average)"
-            opacity={0.9}
-          />
+          <circle cx={currentX} cy={4} r={4} fill="#FFE033" opacity={0.9} />
           {/* X-axis time labels (local time) */}
           {timeLabels.map((label, i) => (
             <text

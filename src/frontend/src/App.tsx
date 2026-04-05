@@ -875,9 +875,9 @@ function PresetBar({
 
   return (
     <>
-      <fieldset className="border-0 p-0 m-0">
+      <fieldset className="border-0 p-0 m-0 w-full">
         <legend className="sr-only">Preset surf spots</legend>
-        <div ref={presetBarRef} className="flex flex-wrap gap-2 md:gap-3">
+        <div ref={presetBarRef} className="flex flex-col gap-2 w-full">
           {presets.map((spot, i) => {
             const isSelected =
               spot !== null && selectedSpot?.name === spot.name;
@@ -890,6 +890,7 @@ function PresetBar({
                 <div
                   key={`slot-${i + 1}`}
                   {...getPresetHandlers(i)}
+                  className="w-full"
                   style={{
                     borderRadius: 9999,
                     transition:
@@ -906,29 +907,38 @@ function PresetBar({
                     type="button"
                     onClick={() => setModalSlot(i)}
                     data-ocid={`preset.item.${i + 1}`}
-                    className="group flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
+                    className="group w-full flex items-center gap-3 rounded-full px-4 font-body text-sm font-medium transition-all duration-200 active:scale-[0.98]"
                     style={{
+                      minHeight: 52,
                       background: isDragTarget
                         ? "rgba(0,180,216,0.12)"
-                        : "rgba(13,79,110,0.15)",
+                        : "rgba(13,79,110,0.12)",
                       border: isDragTarget
                         ? "1px dashed var(--color-electric)"
-                        : "1px dashed rgba(13,79,110,0.5)",
+                        : "1px dashed rgba(0,180,216,0.25)",
                       color: isDragTarget
                         ? "var(--color-electric)"
-                        : "rgba(168,216,200,0.45)",
+                        : "rgba(168,216,200,0.5)",
                     }}
                     aria-label={`Set Preset ${i + 1}`}
                   >
+                    {/* Drag handle placeholder for alignment */}
+                    <span
+                      className="flex-shrink-0"
+                      style={{ color: "rgba(168,216,200,0.2)", width: 16 }}
+                      aria-hidden="true"
+                    >
+                      <GripVertical size={16} />
+                    </span>
                     <Plus
                       size={13}
-                      className="transition-transform group-hover:rotate-90"
+                      className="flex-shrink-0 transition-transform group-hover:rotate-90"
                       style={{
                         color: "var(--color-electric)",
-                        opacity: isDragTarget ? 1 : 0.5,
+                        opacity: isDragTarget ? 1 : 0.45,
                       }}
                     />
-                    <span>Preset {i + 1}</span>
+                    <span className="flex-1 text-left">+ Add spot</span>
                   </button>
                 </div>
               );
@@ -937,7 +947,7 @@ function PresetBar({
             return (
               <div
                 key={`slot-filled-${i + 1}`}
-                className="relative flex items-center group"
+                className="relative w-full flex items-center"
                 {...getPresetHandlers(i)}
                 style={{
                   opacity: isDraggingThis ? 0.45 : 1,
@@ -952,42 +962,53 @@ function PresetBar({
                   touchAction: "none",
                 }}
               >
-                {/* Drag handle — visible on hover */}
-                <span
-                  className="absolute -left-1 opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
-                  style={{ color: "var(--color-seafoam)", zIndex: 1 }}
-                  aria-hidden="true"
-                >
-                  <GripVertical size={14} />
-                </span>
-
                 <button
                   type="button"
                   onClick={() => loadSpot(spot)}
                   data-ocid={`preset.item.${i + 1}`}
-                  className="flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
+                  className="w-full flex items-center gap-3 rounded-full px-4 font-body text-sm font-medium transition-all duration-200 active:scale-[0.98]"
                   style={{
+                    minHeight: 52,
                     background: isSelected
-                      ? "var(--color-electric)"
-                      : "rgba(13,79,110,0.35)",
+                      ? "rgba(0,180,216,0.18)"
+                      : "rgba(13,79,110,0.25)",
                     border: `1px solid ${
                       isSelected
-                        ? "var(--color-electric)"
-                        : "rgba(13,79,110,0.7)"
+                        ? "rgba(0,180,216,0.7)"
+                        : "rgba(0,180,216,0.22)"
                     }`,
                     color: isSelected
-                      ? "var(--color-bg)"
-                      : "rgba(255,255,255,0.88)",
-                    fontWeight: isSelected ? 700 : 400,
-                    // Prevent text selection during drag
+                      ? "var(--color-electric)"
+                      : "rgba(255,255,255,0.85)",
+                    fontWeight: isSelected ? 700 : 500,
                     userSelect: "none",
                   }}
                   aria-label={`Load ${spot.name}`}
                   aria-pressed={isSelected}
                 >
-                  <span className="truncate max-w-[140px]">{spot.name}</span>
+                  {/* Always-visible drag handle */}
+                  <span
+                    className="flex-shrink-0"
+                    style={{
+                      color: isSelected
+                        ? "rgba(0,180,216,0.5)"
+                        : "rgba(168,216,200,0.35)",
+                      width: 16,
+                    }}
+                    aria-hidden="true"
+                  >
+                    <GripVertical size={16} />
+                  </span>
+                  <span className="flex-1 text-left truncate">{spot.name}</span>
+                  {isSelected && (
+                    <span
+                      className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
+                      style={{ background: "var(--color-electric)" }}
+                      aria-hidden="true"
+                    />
+                  )}
                 </button>
-                {/* Edit button overlaid on right edge */}
+                {/* Edit button — always visible on the right */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -995,18 +1016,19 @@ function PresetBar({
                     setModalSlot(i);
                   }}
                   data-ocid={`preset.edit_button.${i + 1}`}
-                  className="absolute right-2 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute right-3 w-7 h-7 rounded-full flex items-center justify-center transition-opacity"
                   style={{
                     background: isSelected
-                      ? "rgba(2,13,24,0.25)"
+                      ? "rgba(0,180,216,0.15)"
                       : "rgba(13,79,110,0.5)",
                     color: isSelected
-                      ? "rgba(2,13,24,0.8)"
+                      ? "var(--color-electric)"
                       : "var(--color-seafoam)",
+                    opacity: 0.85,
                   }}
                   aria-label={`Edit Preset ${i + 1}`}
                 >
-                  <Pencil size={10} />
+                  <Pencil size={11} />
                 </button>
               </div>
             );
@@ -1738,6 +1760,58 @@ export default function App() {
                 >
                   Your Saved Spots
                 </p>
+                {/* Use my location — top of list */}
+                <button
+                  type="button"
+                  onClick={handleUseMyLocation}
+                  disabled={locating}
+                  data-ocid="location.button"
+                  className="w-full flex items-center gap-3 rounded-full px-4 font-body text-sm font-semibold transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                  style={{
+                    minHeight: 52,
+                    background: locating
+                      ? "rgba(0,180,216,0.08)"
+                      : "rgba(0,180,216,0.1)",
+                    border: "1px solid rgba(0,180,216,0.45)",
+                    color: "var(--color-electric)",
+                  }}
+                  aria-label="Use my current location to detect nearest surf conditions"
+                >
+                  <span
+                    className="flex-shrink-0"
+                    style={{
+                      width: 16,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    aria-hidden="true"
+                  >
+                    {locating ? (
+                      <div
+                        className="w-4 h-4 rounded-full border-2 animate-spin"
+                        style={{
+                          borderColor: "var(--color-electric)",
+                          borderTopColor: "transparent",
+                        }}
+                      />
+                    ) : (
+                      <LocateFixed size={16} />
+                    )}
+                  </span>
+                  <span className="flex-1 text-left">
+                    {locating ? "Detecting location…" : "Use my location"}
+                  </span>
+                </button>
+                {locationError && (
+                  <p
+                    className="font-body text-xs px-1"
+                    style={{ color: "var(--color-coral)" }}
+                    role="alert"
+                  >
+                    {locationError}
+                  </p>
+                )}
                 <PresetBar
                   presets={presets}
                   setPresets={setPresets}
@@ -1747,52 +1821,6 @@ export default function App() {
                     setSettingsOpen(false);
                   }}
                 />
-                <div className="flex flex-col gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={handleUseMyLocation}
-                    disabled={locating}
-                    data-ocid="location.button"
-                    className="flex items-center gap-2 rounded-full px-5 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
-                    style={{
-                      background: locating
-                        ? "rgba(0,180,216,0.1)"
-                        : "rgba(0,180,216,0.08)",
-                      border: "1px solid rgba(0,180,216,0.35)",
-                      color: "var(--color-electric)",
-                    }}
-                    aria-label="Use my current location to detect nearest surf conditions"
-                  >
-                    {locating ? (
-                      <div
-                        className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
-                        style={{
-                          borderColor: "var(--color-electric)",
-                          borderTopColor: "transparent",
-                        }}
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <LocateFixed
-                        size={15}
-                        className="flex-shrink-0"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span>
-                      {locating ? "Detecting location…" : "Use my location"}
-                    </span>
-                  </button>
-                  {locationError && (
-                    <p
-                      className="font-body text-xs px-1"
-                      style={{ color: "var(--color-coral)" }}
-                      role="alert"
-                    >
-                      {locationError}
-                    </p>
-                  )}
-                </div>
               </div>
 
               <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />

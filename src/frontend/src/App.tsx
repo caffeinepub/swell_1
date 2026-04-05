@@ -1445,7 +1445,7 @@ function TideChart({
                 <text
                   x={W - 8}
                   y={y}
-                  fill="rgba(168,216,200,0.95)"
+                  fill="#FFE033"
                   fontSize={18}
                   fontWeight="600"
                   fontFamily="General Sans, sans-serif"

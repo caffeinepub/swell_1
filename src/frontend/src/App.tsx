@@ -328,6 +328,7 @@ function useSortable<T>(
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const didDragRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
 
   const getHandlers = useCallback(
     (index: number) => ({
@@ -336,7 +337,7 @@ function useSortable<T>(
         dragIndexRef.current = index;
         startPosRef.current = { x: e.clientX, y: e.clientY };
         didDragRef.current = false;
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        pointerIdRef.current = e.pointerId;
       },
       onPointerMove: (e: React.PointerEvent) => {
         if (dragIndexRef.current === null) return;
@@ -345,6 +346,11 @@ function useSortable<T>(
         if (!didDragRef.current && Math.hypot(dx, dy) > 8) {
           didDragRef.current = true;
           setActiveIndex(dragIndexRef.current);
+          if (pointerIdRef.current !== null) {
+            (e.currentTarget as HTMLElement).setPointerCapture(
+              pointerIdRef.current,
+            );
+          }
         }
         if (!didDragRef.current) return;
         const container = containerRef.current;

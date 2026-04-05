@@ -1,0 +1,208 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* SWELL palette as raw OKLCH L C H */
+    --swell-bg: 0.075 0.04 243;
+    --swell-teal: 0.35 0.09 228;
+    --swell-electric: 0.7 0.14 218;
+    --swell-coral: 0.68 0.19 38;
+    --swell-seafoam: 0.82 0.07 175;
+    --swell-good: 0.69 0.2 149;
+    --swell-average: 0.75 0.17 72;
+    --swell-poor: 0.68 0.19 38;
+
+    /* Map to shadcn semantic tokens (dark-only app) */
+    --background: 0.075 0.04 243;
+    --foreground: 0.97 0.01 220;
+    --card: 0.12 0.06 232;
+    --card-foreground: 0.97 0.01 220;
+    --popover: 0.15 0.06 232;
+    --popover-foreground: 0.97 0.01 220;
+    --primary: 0.7 0.14 218;
+    --primary-foreground: 0.075 0.04 243;
+    --secondary: 0.35 0.09 228;
+    --secondary-foreground: 0.97 0.01 220;
+    --muted: 0.18 0.05 232;
+    --muted-foreground: 0.6 0.05 220;
+    --accent: 0.35 0.09 228;
+    --accent-foreground: 0.97 0.01 220;
+    --destructive: 0.68 0.19 38;
+    --destructive-foreground: 0.97 0.01 220;
+    --border: 0.25 0.07 232;
+    --input: 0.25 0.07 232;
+    --ring: 0.7 0.14 218;
+    --chart-1: 0.7 0.14 218;
+    --chart-2: 0.82 0.07 175;
+    --chart-3: 0.69 0.2 149;
+    --chart-4: 0.75 0.17 72;
+    --chart-5: 0.68 0.19 38;
+    --sidebar: 0.1 0.05 243;
+    --sidebar-foreground: 0.97 0.01 220;
+    --sidebar-primary: 0.7 0.14 218;
+    --sidebar-primary-foreground: 0.075 0.04 243;
+    --sidebar-accent: 0.35 0.09 228;
+    --sidebar-accent-foreground: 0.97 0.01 220;
+    --sidebar-border: 0.25 0.07 232;
+    --sidebar-ring: 0.7 0.14 218;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "General Sans", "Plus Jakarta Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* SWELL custom CSS variables */
+:root {
+  --color-bg: #020d18;
+  --color-teal: #0d4f6e;
+  --color-electric: #00b4d8;
+  --color-coral: #ff6b47;
+  --color-seafoam: #a8d8c8;
+  --color-good: #22c55e;
+  --color-average: #f59e0b;
+  --color-poor: #ff6b47;
+}
+
+/* ─── Wave background animations ──────────────────────────────────────────── */
+@keyframes waveShift1 {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-3%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes waveShift2 {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes waveShift3 {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-4%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes waveShift4 {
+  0% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.wave-layer-1 {
+  animation: waveShift1 8s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+.wave-layer-2 {
+  animation: waveShift2 12s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+.wave-layer-3 {
+  animation: waveShift3 16s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+.wave-layer-4 {
+  animation: waveShift4 20s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* Tide path draw animation */
+@keyframes drawPath {
+  from {
+    stroke-dashoffset: var(--path-length, 2000);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Status dot pulse animation */
+@keyframes statusPulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 7-day card slide-in */
+@keyframes slideInRight {
+  from {
+    transform: translateX(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.status-dot {
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.forecast-card {
+  animation: slideInRight 0.4s ease-out both;
+}
+
+/* Hide scrollbar but keep scroll */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

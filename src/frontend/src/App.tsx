@@ -317,6 +317,87 @@ function useLocalTime(timezone: string): string {
   return time;
 }
 
+// ─── useSortable hook (pointer-event drag — works on iOS + Android) ──────────
+function useSortable<T>(
+  items: T[],
+  onReorder: (newItems: T[]) => void,
+  containerRef: React.RefObject<HTMLElement | null>,
+) {
+  const dragIndexRef = useRef<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
+
+  const getHandlers = useCallback(
+    (index: number) => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        if (e.button !== 0 && e.pointerType === "mouse") return;
+        dragIndexRef.current = index;
+        startPosRef.current = { x: e.clientX, y: e.clientY };
+        didDragRef.current = false;
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        if (dragIndexRef.current === null) return;
+        const dx = e.clientX - (startPosRef.current?.x ?? e.clientX);
+        const dy = e.clientY - (startPosRef.current?.y ?? e.clientY);
+        if (!didDragRef.current && Math.hypot(dx, dy) > 8) {
+          didDragRef.current = true;
+          setActiveIndex(dragIndexRef.current);
+        }
+        if (!didDragRef.current) return;
+        const container = containerRef.current;
+        if (!container) return;
+        const children = Array.from(container.children) as HTMLElement[];
+        let found = overIndex;
+        for (let i = 0; i < children.length; i++) {
+          const rect = children[i].getBoundingClientRect();
+          if (
+            e.clientX >= rect.left &&
+            e.clientX <= rect.right &&
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom
+          ) {
+            found = i;
+            break;
+          }
+        }
+        if (found !== overIndex) setOverIndex(found);
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (dragIndexRef.current === null) return;
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        if (
+          didDragRef.current &&
+          overIndex !== null &&
+          overIndex !== dragIndexRef.current
+        ) {
+          const next = [...items];
+          const [moved] = next.splice(dragIndexRef.current, 1);
+          next.splice(overIndex, 0, moved);
+          onReorder(next);
+        }
+        dragIndexRef.current = null;
+        startPosRef.current = null;
+        didDragRef.current = false;
+        setActiveIndex(null);
+        setOverIndex(null);
+      },
+      onPointerCancel: () => {
+        dragIndexRef.current = null;
+        startPosRef.current = null;
+        didDragRef.current = false;
+        setActiveIndex(null);
+        setOverIndex(null);
+      },
+    }),
+    [items, onReorder, overIndex, containerRef],
+  );
+
+  return { getHandlers, activeIndex, overIndex };
+}
+
 // ─── Geocoding search ─────────────────────────────────────────────────────────
 async function searchSpots(query: string): Promise<GeoResult[]> {
   if (!query.trim()) return [];
@@ -753,20 +834,6 @@ function PresetBar({
   loadSpot: (spot: Spot) => void;
 }) {
   const [modalSlot, setModalSlot] = useState<number | null>(null);
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
-  // Cancel drag on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && draggingIndex !== null) {
-        setDraggingIndex(null);
-        setDragOverIndex(null);
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [draggingIndex]);
 
   const handleSelect = (spot: Spot, slotIndex: number) => {
     const next = [...presets];
@@ -781,73 +848,40 @@ function PresetBar({
     setPresets(next);
   };
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggingIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    // Use a transparent ghost by setting drag image offset outside viewport
-    e.dataTransfer.setData("text/plain", String(index));
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (index !== dragOverIndex) setDragOverIndex(index);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverIndex(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
-    e.preventDefault();
-    if (draggingIndex === null || draggingIndex === targetIndex) {
-      setDraggingIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
-    const next = [...presets];
-    const dragged = next[draggingIndex];
-    next[draggingIndex] = next[targetIndex];
-    next[targetIndex] = dragged;
-    setPresets(next);
-    setDraggingIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggingIndex(null);
-    setDragOverIndex(null);
-  };
+  const presetBarRef = useRef<HTMLDivElement | null>(null);
+  const {
+    getHandlers: getPresetHandlers,
+    activeIndex: activePresetIndex,
+    overIndex: overPresetIndex,
+  } = useSortable(presets, setPresets, presetBarRef);
 
   return (
     <>
       <fieldset className="border-0 p-0 m-0">
         <legend className="sr-only">Preset surf spots</legend>
-        <div className="flex flex-wrap gap-2 md:gap-3">
+        <div ref={presetBarRef} className="flex flex-wrap gap-2 md:gap-3">
           {presets.map((spot, i) => {
             const isSelected =
               spot !== null && selectedSpot?.name === spot.name;
             const isEmpty = spot === null;
-            const isDraggingThis = draggingIndex === i;
-            const isDragTarget = dragOverIndex === i;
+            const isDraggingThis = activePresetIndex === i;
+            const isDragTarget = overPresetIndex === i;
 
             if (isEmpty) {
               return (
                 <div
                   key={`slot-${i + 1}`}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, i)}
+                  {...getPresetHandlers(i)}
                   style={{
                     borderRadius: 9999,
                     transition:
-                      "box-shadow 0.15s ease, border-color 0.15s ease",
-                    ...(isDragTarget
-                      ? {
-                          outline: "2px solid var(--color-electric)",
-                          outlineOffset: "2px",
-                        }
-                      : {}),
+                      "box-shadow 0.15s ease, border-color 0.15s ease, outline 0.15s ease",
+                    outline:
+                      overPresetIndex === i && activePresetIndex !== i
+                        ? "2px solid var(--color-electric)"
+                        : "none",
+                    outlineOffset: "2px",
+                    touchAction: "none",
                   }}
                 >
                   <button
@@ -886,23 +920,18 @@ function PresetBar({
               <div
                 key={`slot-filled-${i + 1}`}
                 className="relative flex items-center group"
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, i)}
-                onDragOver={(e) => handleDragOver(e, i)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, i)}
-                onDragEnd={handleDragEnd}
+                {...getPresetHandlers(i)}
                 style={{
                   opacity: isDraggingThis ? 0.45 : 1,
                   transition: "opacity 0.15s ease, outline 0.15s ease",
                   borderRadius: 9999,
-                  cursor: "grab",
-                  ...(isDragTarget && !isDraggingThis
-                    ? {
-                        outline: "2px solid var(--color-electric)",
-                        outlineOffset: "2px",
-                      }
-                    : {}),
+                  cursor: isDraggingThis ? "grabbing" : "grab",
+                  outline:
+                    isDragTarget && !isDraggingThis
+                      ? "2px solid var(--color-electric)"
+                      : "none",
+                  outlineOffset: "2px",
+                  touchAction: "none",
                 }}
               >
                 {/* Drag handle — visible on hover */}
@@ -1514,11 +1543,16 @@ export default function App() {
   const [tileOrder, setTileOrderState] = useState<TileId[]>(() =>
     loadTileOrder(),
   );
-  const dragTileRef = useRef<number | null>(null);
   const setTileOrder = useCallback((next: TileId[]) => {
     setTileOrderState(next);
     saveTileOrder(next);
   }, []);
+  const conditionGridRef = useRef<HTMLDivElement | null>(null);
+  const {
+    getHandlers: getTileHandlers,
+    activeIndex: activeTileIndex,
+    overIndex: overTileIndex,
+  } = useSortable(tileOrder, setTileOrder, conditionGridRef);
 
   // Current location state
   const [locating, setLocating] = useState(false);
@@ -1944,7 +1978,10 @@ export default function App() {
                     >
                       Today's Conditions
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+                    <div
+                      ref={conditionGridRef}
+                      className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
+                    >
                       {tileOrder.map((tileId, idx) => {
                         const isWide =
                           tileId === "tide" || tileId === "forecast";
@@ -2083,30 +2120,22 @@ export default function App() {
                         return (
                           <div
                             key={tileId}
-                            draggable
-                            onDragStart={() => {
-                              dragTileRef.current = idx;
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                            }}
-                            onDrop={() => {
-                              if (
-                                dragTileRef.current === null ||
-                                dragTileRef.current === idx
-                              )
-                                return;
-                              const next = [...tileOrder];
-                              const [moved] = next.splice(
-                                dragTileRef.current,
-                                1,
-                              );
-                              next.splice(idx, 0, moved);
-                              setTileOrder(next);
-                              dragTileRef.current = null;
-                            }}
+                            {...getTileHandlers(idx)}
                             className={isWide ? "col-span-2 md:col-span-5" : ""}
-                            style={{ cursor: "grab" }}
+                            style={{
+                              cursor:
+                                activeTileIndex === idx ? "grabbing" : "grab",
+                              opacity: activeTileIndex === idx ? 0.5 : 1,
+                              outline:
+                                overTileIndex === idx && activeTileIndex !== idx
+                                  ? "2px solid var(--color-electric)"
+                                  : "none",
+                              outlineOffset: "2px",
+                              borderRadius: "12px",
+                              transition:
+                                "opacity 0.15s ease, outline 0.15s ease",
+                              touchAction: "none",
+                            }}
                             data-ocid={`conditions.item.${idx + 1}`}
                           >
                             {tileContent}

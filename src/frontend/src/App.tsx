@@ -1102,39 +1102,15 @@ function CompassCard({ degrees }: { degrees: number }) {
         </span>
       </div>
       <div className="flex flex-1 items-center justify-center">
-        <div
+        <span
+          className="font-display font-bold leading-none"
           style={{
-            transform: `rotate(${(degrees + 180) % 360}deg)`,
-            transition: "transform 0.4s ease",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            color: "var(--color-electric)",
+            fontSize: "clamp(1.6rem, 5vw, 2.4rem)",
           }}
-          className="w-14 h-14"
         >
-          <svg
-            width="100%"
-            height="100%"
-            viewBox="0 0 20 20"
-            fill="none"
-            role="img"
-            aria-label="Wind from direction"
-          >
-            <circle
-              cx="10"
-              cy="10"
-              r="9"
-              stroke="rgba(0,180,216,0.3)"
-              strokeWidth="1.5"
-            />
-            <polygon
-              points="10,2 13,14 10,12 7,14"
-              fill="var(--color-electric)"
-              opacity="0.9"
-            />
-            <circle cx="10" cy="10" r="1.5" fill="rgba(168,216,200,0.6)" />
-          </svg>
-        </div>
+          {degreesToCompass(degrees)}
+        </span>
       </div>
     </div>
   );

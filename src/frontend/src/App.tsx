@@ -1411,7 +1411,7 @@ function TideChart({
               key={label}
               x={(i / 4) * W}
               y={H + 25}
-              fill="rgba(168,216,200,0.5)"
+              fill="rgba(168,216,200,1)"
               fontSize={15}
               fontFamily="General Sans, sans-serif"
               textAnchor={i === 0 ? "start" : i === 4 ? "end" : "middle"}

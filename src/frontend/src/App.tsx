@@ -42,6 +42,8 @@ interface ConditionsData {
   dailyWaveDir: number[];
   dailyDates: string[];
   dailyWindSpeed: number[];
+  swellPeriod: number;
+  dailySwellPeriod: number[];
   tideHeights: number[]; // 24 hourly sea-level values for today (metres, local time)
   utcOffsetSeconds: number; // location UTC offset in seconds
 }
@@ -165,6 +167,7 @@ type TileId =
   | "direction"
   | "waterTemp"
   | "airTemp"
+  | "period"
   | "tide"
   | "forecast";
 const DEFAULT_TILE_ORDER: TileId[] = [
@@ -173,6 +176,7 @@ const DEFAULT_TILE_ORDER: TileId[] = [
   "direction",
   "waterTemp",
   "airTemp",
+  "period",
   "tide",
   "forecast",
 ];
@@ -191,6 +195,7 @@ function loadTileOrder(): TileId[] {
           "direction",
           "waterTemp",
           "airTemp",
+          "period",
           "tide",
           "forecast",
         ].includes(id),
@@ -200,6 +205,8 @@ function loadTileOrder(): TileId[] {
       const migrated = [...parsed] as TileId[];
       if (!migrated.includes("tide")) migrated.push("tide");
       if (!migrated.includes("forecast")) migrated.push("forecast");
+      if (!migrated.includes("period"))
+        migrated.splice(migrated.indexOf("tide"), 0, "period");
       return migrated;
     }
     return DEFAULT_TILE_ORDER;
@@ -432,7 +439,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     spot.timezone === "auto" ? "auto" : encodeURIComponent(spot.timezone);
   const [marineRes, weatherRes] = await Promise.all([
     fetch(
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant&timezone=${tz}&past_days=16&forecast_days=16`,
+      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,swell_wave_period,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant,swell_wave_period_max&timezone=${tz}&past_days=16&forecast_days=16`,
     ),
     fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=windspeed_10m,winddirection_10m,apparent_temperature,temperature_2m&daily=windspeed_10m_max&current_weather=true&timezone=${tz}`,
@@ -483,6 +490,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
 
   const waveHeight = marine.hourly?.wave_height?.[hi] ?? 1.2;
   const waveDirection = marine.hourly?.wave_direction?.[hi] ?? 270;
+  const swellPeriod = marine.hourly?.swell_wave_period?.[hi] ?? 0;
   const windSpeed =
     weather.current_weather?.windspeed ??
     weather.hourly?.windspeed_10m?.[wi] ??
@@ -501,6 +509,8 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   ];
   const dailyWaveDir: number[] =
     marine.daily?.wave_direction_dominant ?? Array(7).fill(270);
+  const dailySwellPeriod: number[] =
+    marine.daily?.swell_wave_period_max ?? Array(7).fill(0);
   const dailyDates: string[] =
     marine.daily?.time ??
     [...Array(7).keys()].map((i) => {
@@ -559,6 +569,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   return {
     waveHeight,
     waveDirection,
+    swellPeriod,
     windSpeed,
     windDirection,
     waterTemp,
@@ -567,6 +578,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     dailyWaveDir,
     dailyDates,
     dailyWindSpeed,
+    dailySwellPeriod,
     tideHeights,
     utcOffsetSeconds,
   };
@@ -1129,11 +1141,13 @@ function ForecastCard({
   heightLabel,
   displaySpeed,
   speedLabel,
+  swellPeriod,
 }: {
   date: string;
   waveMax: number;
   waveDir: number;
   windSpeed: number;
+  swellPeriod: number;
   index: number;
   displayHeight: (m: number) => number;
   heightLabel: string;
@@ -1177,6 +1191,11 @@ function ForecastCard({
         {displayHeight(waveMax).toFixed(1)}
         {heightLabel}
       </span>
+      {swellPeriod > 0 && (
+        <span className="font-display font-bold text-white text-base">
+          {swellPeriod.toFixed(0)}s
+        </span>
+      )}
       <span
         className="text-sm font-semibold"
         style={{ color: "var(--color-electric)" }}
@@ -2014,6 +2033,17 @@ export default function App() {
                                   decimals={0}
                                 />
                               );
+                            case "period":
+                              return (
+                                <StatCard
+                                  label="PERIOD"
+                                  value={data.swellPeriod}
+                                  unit="s"
+                                  status="good"
+                                  icon={<Waves size={14} />}
+                                  decimals={0}
+                                />
+                              );
                             case "tide":
                               return (
                                 <TideChart
@@ -2080,6 +2110,9 @@ export default function App() {
                                                 }
                                                 windSpeed={
                                                   data.dailyWindSpeed[i] ?? 15
+                                                }
+                                                swellPeriod={
+                                                  data.dailySwellPeriod[i] ?? 0
                                                 }
                                                 index={j}
                                                 displayHeight={displayHeight}

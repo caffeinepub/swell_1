@@ -104,25 +104,9 @@ const STATUS_COLOR: Record<Status, string> = {
   poor: "var(--color-poor)",
 };
 
-function conditionSummary(
-  wh: number,
-  ws: number,
-  wd: string,
-  displayWh: number,
-  heightUnit: string,
-): string {
-  const h = displayWh.toFixed(1);
-  if (wh > 1.5 && ws < 20)
-    return `Epic ${h}${heightUnit} swells with light winds – perfect sailing conditions.`;
-  if (wh >= 1 && wh <= 2 && ws < 25)
-    return `Clean ${h}${heightUnit} swells with ${wd} winds – ideal sailing conditions.`;
-  if (wh >= 0.5 && wh < 1)
-    return `Light ${h}${heightUnit} swells, gentle sailing conditions.`;
-  return `Choppy ${h}${heightUnit} conditions, not ideal for sailing.`;
-}
-
 function dayName(dateStr: string): string {
-  const d = new Date(dateStr);
+  // Parse as local noon to avoid UTC-midnight timezone rollover (e.g. Sun -> Sat for US browsers)
+  const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 
@@ -333,6 +317,93 @@ function useLocalTime(timezone: string): string {
   return time;
 }
 
+// ─── useSortable hook (pointer-event drag — works on iOS + Android) ──────────
+function useSortable<T>(
+  items: T[],
+  onReorder: (newItems: T[]) => void,
+  containerRef: React.RefObject<HTMLElement | null>,
+) {
+  const dragIndexRef = useRef<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
+
+  const getHandlers = useCallback(
+    (index: number) => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        if (e.button !== 0 && e.pointerType === "mouse") return;
+        dragIndexRef.current = index;
+        startPosRef.current = { x: e.clientX, y: e.clientY };
+        didDragRef.current = false;
+        pointerIdRef.current = e.pointerId;
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        if (dragIndexRef.current === null) return;
+        const dx = e.clientX - (startPosRef.current?.x ?? e.clientX);
+        const dy = e.clientY - (startPosRef.current?.y ?? e.clientY);
+        if (!didDragRef.current && Math.hypot(dx, dy) > 8) {
+          didDragRef.current = true;
+          setActiveIndex(dragIndexRef.current);
+          if (pointerIdRef.current !== null) {
+            (e.currentTarget as HTMLElement).setPointerCapture(
+              pointerIdRef.current,
+            );
+          }
+        }
+        if (!didDragRef.current) return;
+        const container = containerRef.current;
+        if (!container) return;
+        const children = Array.from(container.children) as HTMLElement[];
+        let found = overIndex;
+        for (let i = 0; i < children.length; i++) {
+          const rect = children[i].getBoundingClientRect();
+          if (
+            e.clientX >= rect.left &&
+            e.clientX <= rect.right &&
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom
+          ) {
+            found = i;
+            break;
+          }
+        }
+        if (found !== overIndex) setOverIndex(found);
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (dragIndexRef.current === null) return;
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        if (
+          didDragRef.current &&
+          overIndex !== null &&
+          overIndex !== dragIndexRef.current
+        ) {
+          const next = [...items];
+          const [moved] = next.splice(dragIndexRef.current, 1);
+          next.splice(overIndex, 0, moved);
+          onReorder(next);
+        }
+        dragIndexRef.current = null;
+        startPosRef.current = null;
+        didDragRef.current = false;
+        setActiveIndex(null);
+        setOverIndex(null);
+      },
+      onPointerCancel: () => {
+        dragIndexRef.current = null;
+        startPosRef.current = null;
+        didDragRef.current = false;
+        setActiveIndex(null);
+        setOverIndex(null);
+      },
+    }),
+    [items, onReorder, overIndex, containerRef],
+  );
+
+  return { getHandlers, activeIndex, overIndex };
+}
+
 // ─── Geocoding search ─────────────────────────────────────────────────────────
 async function searchSpots(query: string): Promise<GeoResult[]> {
   if (!query.trim()) return [];
@@ -361,7 +432,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     spot.timezone === "auto" ? "auto" : encodeURIComponent(spot.timezone);
   const [marineRes, weatherRes] = await Promise.all([
     fetch(
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant&timezone=${tz}&forecast_days=7`,
+      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant&timezone=${tz}&past_days=16&forecast_days=16`,
     ),
     fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=windspeed_10m,winddirection_10m,apparent_temperature,temperature_2m&daily=windspeed_10m_max&current_weather=true&timezone=${tz}`,
@@ -372,15 +443,43 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     weatherRes.json(),
   ]);
 
-  const now = new Date();
-  const currentHourStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:00`;
+  // Use the location's UTC offset (from the marine API) to determine local time
+  // at the *spot*, not the browser's local timezone. This ensures the current-hour
+  // index is correct regardless of where the user's device is located.
+  const utcOffsetSeconds: number = marine.utc_offset_seconds ?? 0;
+  const nowLocalMs = Date.now() + utcOffsetSeconds * 1000;
+  const nowLocal = new Date(nowLocalMs);
+  const currentHourStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}T${String(nowLocal.getUTCHours()).padStart(2, "0")}:00`;
   const hourlyTimes: string[] = marine.hourly?.time ?? [];
   let hi = hourlyTimes.findIndex((t: string) => t === currentHourStr);
-  if (hi < 0) hi = 0;
+  // Fallback: find the closest available hour rather than silently using index 0 (which is 16 days ago)
+  if (hi < 0) {
+    hi = hourlyTimes.reduce((best, t, idx) => {
+      const diff = Math.abs(
+        new Date(t).getTime() - (Date.now() + utcOffsetSeconds * 1000),
+      );
+      const bestDiff = Math.abs(
+        new Date(hourlyTimes[best] ?? t).getTime() -
+          (Date.now() + utcOffsetSeconds * 1000),
+      );
+      return diff < bestDiff ? idx : best;
+    }, 0);
+  }
 
   const wHourlyTimes: string[] = weather.hourly?.time ?? [];
   let wi = wHourlyTimes.findIndex((t: string) => t === currentHourStr);
-  if (wi < 0) wi = 0;
+  if (wi < 0) {
+    wi = wHourlyTimes.reduce((best, t, idx) => {
+      const diff = Math.abs(
+        new Date(t).getTime() - (Date.now() + utcOffsetSeconds * 1000),
+      );
+      const bestDiff = Math.abs(
+        new Date(wHourlyTimes[best] ?? t).getTime() -
+          (Date.now() + utcOffsetSeconds * 1000),
+      );
+      return diff < bestDiff ? idx : best;
+    }, 0);
+  }
 
   const waveHeight = marine.hourly?.wave_height?.[hi] ?? 1.2;
   const waveDirection = marine.hourly?.wave_direction?.[hi] ?? 270;
@@ -411,13 +510,19 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     });
 
   // Extract today's tide heights (24 hourly values in location local time)
-  // The marine API returns data starting at 00:00 local time when timezone is set
+  // The marine API returns sea_level_height_msl referenced to Mean Sea Level (MSL),
+  // NOT to Chart Datum (LAT/CD). To convert to Chart Datum-referenced heights
+  // (matching official tide tables), we compute a Chart Datum offset by finding
+  // the global minimum over a wide ±16-day window (proxy for Lowest Astronomical Tide).
+
   const allTideHeights: (number | null)[] =
     marine.hourly?.sea_level_height_msl ?? [];
-  const todayDateStr =
-    marine.hourly?.time?.[0]?.slice(0, 10) ??
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
   const marineHourlyTimes: string[] = marine.hourly?.time ?? [];
+
+  // Find today's date in the location's local timezone using the UTC offset
+  // (utcOffsetSeconds, nowLocalMs, nowLocal already computed above)
+  const todayDateStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+
   const todayStartIdx = marineHourlyTimes.findIndex((t: string) =>
     t.startsWith(todayDateStr),
   );
@@ -426,9 +531,8 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
       ? (allTideHeights.slice(todayStartIdx, todayStartIdx + 24) as number[])
       : Array(24).fill(null);
   // Fill nulls with linear interpolation from neighbours, or 0 as fallback
-  const tideHeights: number[] = rawTide.map((v, i, arr) => {
+  const rawTideFilled: number[] = rawTide.map((v, i, arr) => {
     if (v !== null && v !== undefined) return v as number;
-    // find nearest non-null neighbours
     let lo = i - 1;
     let hi = i + 1;
     while (lo >= 0 && (arr[lo] === null || arr[lo] === undefined)) lo--;
@@ -441,8 +545,16 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     if (hiVal !== null) return hiVal as number;
     return 0;
   });
-
-  const utcOffsetSeconds: number = marine.utc_offset_seconds ?? 0;
+  // Compute Chart Datum offset: the global minimum over the full ±16-day window
+  // approximates Lowest Astronomical Tide (LAT), which is 0m on Admiralty charts.
+  // Subtracting this offset converts MSL-referenced values to Chart Datum-referenced
+  // values matching official tide tables (e.g. +1.4m low, +12.6m high for Bristol).
+  const allValidHeights = allTideHeights.filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
+  const chartDatumOffset =
+    allValidHeights.length > 0 ? Math.min(...allValidHeights) : 0;
+  const tideHeights: number[] = rawTideFilled.map((v) => v - chartDatumOffset);
 
   return {
     waveHeight,
@@ -728,20 +840,6 @@ function PresetBar({
   loadSpot: (spot: Spot) => void;
 }) {
   const [modalSlot, setModalSlot] = useState<number | null>(null);
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-
-  // Cancel drag on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && draggingIndex !== null) {
-        setDraggingIndex(null);
-        setDragOverIndex(null);
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [draggingIndex]);
 
   const handleSelect = (spot: Spot, slotIndex: number) => {
     const next = [...presets];
@@ -756,80 +854,47 @@ function PresetBar({
     setPresets(next);
   };
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggingIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    // Use a transparent ghost by setting drag image offset outside viewport
-    e.dataTransfer.setData("text/plain", String(index));
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (index !== dragOverIndex) setDragOverIndex(index);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverIndex(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
-    e.preventDefault();
-    if (draggingIndex === null || draggingIndex === targetIndex) {
-      setDraggingIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
-    const next = [...presets];
-    const dragged = next[draggingIndex];
-    next[draggingIndex] = next[targetIndex];
-    next[targetIndex] = dragged;
-    setPresets(next);
-    setDraggingIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggingIndex(null);
-    setDragOverIndex(null);
-  };
+  const presetBarRef = useRef<HTMLDivElement | null>(null);
+  const {
+    getHandlers: getPresetHandlers,
+    activeIndex: activePresetIndex,
+    overIndex: overPresetIndex,
+  } = useSortable(presets, setPresets, presetBarRef);
 
   return (
     <>
       <fieldset className="border-0 p-0 m-0">
         <legend className="sr-only">Preset surf spots</legend>
-        <div className="flex flex-wrap gap-2 md:gap-3">
+        <div ref={presetBarRef} className="flex flex-wrap gap-2 md:gap-3">
           {presets.map((spot, i) => {
             const isSelected =
               spot !== null && selectedSpot?.name === spot.name;
             const isEmpty = spot === null;
-            const isDraggingThis = draggingIndex === i;
-            const isDragTarget = dragOverIndex === i;
+            const isDraggingThis = activePresetIndex === i;
+            const isDragTarget = overPresetIndex === i;
 
             if (isEmpty) {
               return (
                 <div
                   key={`slot-${i + 1}`}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, i)}
+                  {...getPresetHandlers(i)}
                   style={{
                     borderRadius: 9999,
                     transition:
-                      "box-shadow 0.15s ease, border-color 0.15s ease",
-                    ...(isDragTarget
-                      ? {
-                          outline: "2px solid var(--color-electric)",
-                          outlineOffset: "2px",
-                        }
-                      : {}),
+                      "box-shadow 0.15s ease, border-color 0.15s ease, outline 0.15s ease",
+                    outline:
+                      overPresetIndex === i && activePresetIndex !== i
+                        ? "2px solid var(--color-electric)"
+                        : "none",
+                    outlineOffset: "2px",
+                    touchAction: "none",
                   }}
                 >
                   <button
                     type="button"
                     onClick={() => setModalSlot(i)}
                     data-ocid={`preset.item.${i + 1}`}
-                    className="group flex items-center gap-2 rounded-full px-4 py-2 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95"
+                    className="group flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
                     style={{
                       background: isDragTarget
                         ? "rgba(0,180,216,0.12)"
@@ -861,23 +926,18 @@ function PresetBar({
               <div
                 key={`slot-filled-${i + 1}`}
                 className="relative flex items-center group"
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, i)}
-                onDragOver={(e) => handleDragOver(e, i)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, i)}
-                onDragEnd={handleDragEnd}
+                {...getPresetHandlers(i)}
                 style={{
                   opacity: isDraggingThis ? 0.45 : 1,
                   transition: "opacity 0.15s ease, outline 0.15s ease",
                   borderRadius: 9999,
-                  cursor: "grab",
-                  ...(isDragTarget && !isDraggingThis
-                    ? {
-                        outline: "2px solid var(--color-electric)",
-                        outlineOffset: "2px",
-                      }
-                    : {}),
+                  cursor: isDraggingThis ? "grabbing" : "grab",
+                  outline:
+                    isDragTarget && !isDraggingThis
+                      ? "2px solid var(--color-electric)"
+                      : "none",
+                  outlineOffset: "2px",
+                  touchAction: "none",
                 }}
               >
                 {/* Drag handle — visible on hover */}
@@ -893,7 +953,7 @@ function PresetBar({
                   type="button"
                   onClick={() => loadSpot(spot)}
                   data-ocid={`preset.item.${i + 1}`}
-                  className="flex items-center gap-2 rounded-full pl-4 pr-8 py-2 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
                   style={{
                     background: isSelected
                       ? "var(--color-electric)"
@@ -910,20 +970,10 @@ function PresetBar({
                     // Prevent text selection during drag
                     userSelect: "none",
                   }}
-                  aria-label={`Load ${spot.name}, ${spot.country}`}
+                  aria-label={`Load ${spot.name}`}
                   aria-pressed={isSelected}
                 >
-                  <span className="truncate max-w-[120px]">{spot.name}</span>
-                  <span
-                    className="text-xs opacity-60 truncate max-w-[80px]"
-                    style={{
-                      color: isSelected
-                        ? "rgba(2,13,24,0.7)"
-                        : "var(--color-seafoam)",
-                    }}
-                  >
-                    {spot.country}
-                  </span>
+                  <span className="truncate max-w-[140px]">{spot.name}</span>
                 </button>
                 {/* Edit button overlaid on right edge */}
                 <button
@@ -987,7 +1037,7 @@ function StatCard({
 
   return (
     <div
-      className="relative flex flex-col gap-2 rounded-xl p-6 flex-1 min-w-0"
+      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1010,10 +1060,10 @@ function StatCard({
           {label}
         </span>
       </div>
-      <div className="flex items-baseline gap-2 leading-none">
+      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
           className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(2.5rem, 5vw, 4.5rem)", lineHeight: 1 }}
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
         >
           {countedStr}
         </span>
@@ -1031,7 +1081,7 @@ function StatCard({
 function CompassCard({ degrees }: { degrees: number }) {
   return (
     <div
-      className="relative flex flex-col items-center justify-center rounded-xl p-6 flex-1 min-w-0"
+      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1046,37 +1096,24 @@ function CompassCard({ degrees }: { degrees: number }) {
           boxShadow: `0 0 8px ${STATUS_COLOR.average}`,
         }}
       />
-      <div
-        style={{
-          transform: `rotate(${(degrees + 180) % 360}deg)`,
-          transition: "transform 0.4s ease",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <svg
-          width="80"
-          height="80"
-          viewBox="0 0 20 20"
-          fill="none"
-          role="img"
-          aria-label="Wind from direction"
+      <div className="flex items-center gap-2">
+        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+          <Compass size={14} />
+        </span>
+        <span
+          className="text-xs font-body tracking-widest uppercase"
+          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
         >
-          <circle
-            cx="10"
-            cy="10"
-            r="9"
-            stroke="rgba(0,180,216,0.3)"
-            strokeWidth="1.5"
-          />
-          <polygon
-            points="10,2 13,14 10,12 7,14"
-            fill="var(--color-electric)"
-            opacity="0.9"
-          />
-          <circle cx="10" cy="10" r="1.5" fill="rgba(168,216,200,0.6)" />
-        </svg>
+          DIRECTION
+        </span>
+      </div>
+      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
+        <span
+          className="font-display font-extrabold text-white"
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+        >
+          {degreesToCompass(degrees)}
+        </span>
       </div>
     </div>
   );
@@ -1158,10 +1195,11 @@ function ForecastCard({
           alignItems: "center",
           justifyContent: "center",
         }}
+        className="w-7 h-7 flex-shrink-0"
       >
         <svg
-          width="28"
-          height="28"
+          width="100%"
+          height="100%"
           viewBox="0 0 20 20"
           fill="none"
           role="img"
@@ -1301,7 +1339,7 @@ function TideChart({
       </div>
       <div className="px-4 pb-4">
         <svg
-          viewBox={`0 0 ${W} ${H + 30}`}
+          viewBox={`0 0 ${W} ${H + 38}`}
           className="w-full"
           style={{ height: 200 }}
         >
@@ -1359,9 +1397,9 @@ function TideChart({
             <text
               key={label}
               x={(i / 4) * W}
-              y={H + 22}
+              y={H + 25}
               fill="rgba(168,216,200,0.5)"
-              fontSize={11}
+              fontSize={15}
               fontFamily="General Sans, sans-serif"
               textAnchor={i === 0 ? "start" : i === 4 ? "end" : "middle"}
             >
@@ -1372,73 +1410,36 @@ function TideChart({
           {[
             { value: tideMax, y: toSVGY(tideMax) },
             { value: tideMin, y: toSVGY(tideMin) },
-          ].map(({ value, y }) => (
-            <text
-              key={value}
-              x={W - 4}
-              y={y}
-              fill="rgba(168,216,200,0.55)"
-              fontSize={10}
-              fontFamily="General Sans, sans-serif"
-              textAnchor="end"
-              dominantBaseline="middle"
-            >
-              {displayHeight(value).toFixed(1)}
-              {heightLabel}
-            </text>
-          ))}
+          ].map(({ value, y }) => {
+            const label = `${displayHeight(value).toFixed(1)}${heightLabel}`;
+            const labelW = label.length * 11;
+            return (
+              <g key={value}>
+                <rect
+                  x={W - labelW - 10}
+                  y={y - 13}
+                  width={labelW + 8}
+                  height={22}
+                  rx={4}
+                  fill="rgba(2,13,24,0.72)"
+                />
+                <text
+                  x={W - 8}
+                  y={y}
+                  fill="rgba(168,216,200,0.95)"
+                  fontSize={18}
+                  fontWeight="600"
+                  fontFamily="General Sans, sans-serif"
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                >
+                  {label}
+                </text>
+              </g>
+            );
+          })}
         </svg>
       </div>
-    </div>
-  );
-}
-
-function ConditionsSummary({
-  data,
-  displayHeight,
-  heightLabel,
-}: {
-  data: ConditionsData;
-  displayHeight: (m: number) => number;
-  heightLabel: string;
-}) {
-  const wh = data.waveHeight;
-  const ws = data.windSpeed;
-  const wd = degreesToCompass(data.windDirection);
-  const text = conditionSummary(wh, ws, wd, displayHeight(wh), heightLabel);
-  const parts = text.split(/(\d+\.?\d*m?\s*km\/h?)/g);
-
-  return (
-    <div
-      className="rounded-xl p-6"
-      style={{
-        background: "rgba(13,79,110,0.15)",
-        border: "1px solid rgba(13,79,110,0.4)",
-      }}
-      data-ocid="summary.panel"
-    >
-      <h3
-        className="font-body text-xs tracking-widest uppercase font-semibold mb-3"
-        style={{ color: "var(--color-seafoam)", opacity: 0.7 }}
-      >
-        Conditions Summary
-      </h3>
-      <p className="font-body text-xl md:text-2xl font-light text-white leading-relaxed">
-        {parts.map((part, i) => {
-          const isHighlight = /\d/.test(part);
-          if (isHighlight) {
-            return (
-              <span
-                key={`part-${i}-${part.slice(0, 8)}`}
-                style={{ color: "var(--color-electric)", fontWeight: 600 }}
-              >
-                {part}
-              </span>
-            );
-          }
-          return <span key={`part-${i}-${part.slice(0, 8)}`}>{part}</span>;
-        })}
-      </p>
     </div>
   );
 }
@@ -1521,11 +1522,16 @@ export default function App() {
   const [tileOrder, setTileOrderState] = useState<TileId[]>(() =>
     loadTileOrder(),
   );
-  const dragTileRef = useRef<number | null>(null);
   const setTileOrder = useCallback((next: TileId[]) => {
     setTileOrderState(next);
     saveTileOrder(next);
   }, []);
+  const conditionGridRef = useRef<HTMLDivElement | null>(null);
+  const {
+    getHandlers: getTileHandlers,
+    activeIndex: activeTileIndex,
+    overIndex: overTileIndex,
+  } = useSortable(tileOrder, setTileOrder, conditionGridRef);
 
   // Current location state
   const [locating, setLocating] = useState(false);
@@ -1650,18 +1656,21 @@ export default function App() {
         {/* HEADER */}
         <header className="px-6 md:px-12 pt-8 pb-2">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div
-              className="font-display font-black tracking-[0.15em] text-2xl"
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="font-display font-black tracking-[0.15em] text-2xl cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-opacity"
               style={{ color: "var(--color-electric)" }}
+              aria-label="Refresh app"
             >
               SWELL
-            </div>
+            </button>
             <div className="flex items-center gap-4">
               <div
                 className="font-body text-xs tracking-widest uppercase"
                 style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
               >
-                Sailing Conditions
+                SETTINGS
               </div>
               <button
                 type="button"
@@ -1707,7 +1716,74 @@ export default function App() {
               </SheetTitle>
             </SheetHeader>
 
-            <div className="px-6 py-6 space-y-8">
+            <div className="px-6 py-6 space-y-8 overflow-y-auto">
+              {/* Saved Spots */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Your Saved Spots
+                </p>
+                <PresetBar
+                  presets={presets}
+                  setPresets={setPresets}
+                  selectedSpot={selectedSpot}
+                  loadSpot={(spot) => {
+                    loadSpot(spot);
+                    setSettingsOpen(false);
+                  }}
+                />
+                <div className="flex flex-col gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleUseMyLocation}
+                    disabled={locating}
+                    data-ocid="location.button"
+                    className="flex items-center gap-2 rounded-full px-5 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+                    style={{
+                      background: locating
+                        ? "rgba(0,180,216,0.1)"
+                        : "rgba(0,180,216,0.08)",
+                      border: "1px solid rgba(0,180,216,0.35)",
+                      color: "var(--color-electric)",
+                    }}
+                    aria-label="Use my current location to detect nearest surf conditions"
+                  >
+                    {locating ? (
+                      <div
+                        className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
+                        style={{
+                          borderColor: "var(--color-electric)",
+                          borderTopColor: "transparent",
+                        }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <LocateFixed
+                        size={15}
+                        className="flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span>
+                      {locating ? "Detecting location…" : "Use my location"}
+                    </span>
+                  </button>
+                  {locationError && (
+                    <p
+                      className="font-body text-xs px-1"
+                      style={{ color: "var(--color-coral)" }}
+                      role="alert"
+                    >
+                      {locationError}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
+
               {/* Wave Height */}
               <div className="space-y-3">
                 <p
@@ -1826,95 +1902,24 @@ export default function App() {
         </Sheet>
 
         {/* HERO */}
-        <section className="px-6 md:px-12 pt-10 pb-8" data-ocid="hero.section">
-          <div className="max-w-7xl mx-auto">
-            <h1
-              className="font-display font-black text-white leading-none mb-8"
-              style={{
-                fontSize: "clamp(3rem, 8vw, 7rem)",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Read the ocean.
-            </h1>
-
-            {/* Preset description */}
-            <p
-              className="font-body text-xs tracking-widest uppercase mb-3"
-              style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
-            >
-              Your saved spots
-            </p>
-
-            <PresetBar
-              presets={presets}
-              setPresets={setPresets}
-              selectedSpot={selectedSpot}
-              loadSpot={loadSpot}
-            />
-
-            {/* Current Location Button */}
-            <div className="mt-5 flex flex-col items-start gap-2">
-              <button
-                type="button"
-                onClick={handleUseMyLocation}
-                disabled={locating}
-                data-ocid="location.button"
-                className="flex items-center gap-2 rounded-full px-5 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+        {!selectedSpot && (
+          <section
+            className="px-6 md:px-12 pt-10 pb-8"
+            data-ocid="hero.section"
+          >
+            <div className="max-w-7xl mx-auto">
+              <h1
+                className="font-display font-black text-white leading-none mb-8 whitespace-nowrap"
                 style={{
-                  background: locating
-                    ? "rgba(0,180,216,0.1)"
-                    : "rgba(0,180,216,0.08)",
-                  border: "1px solid rgba(0,180,216,0.35)",
-                  color: "var(--color-electric)",
+                  fontSize: "clamp(0.9rem, 4.5vw, 7rem)",
+                  letterSpacing: "-0.02em",
                 }}
-                aria-label="Use my current location to detect nearest surf conditions"
               >
-                {locating ? (
-                  <div
-                    className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
-                    style={{
-                      borderColor: "var(--color-electric)",
-                      borderTopColor: "transparent",
-                    }}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <LocateFixed
-                    size={15}
-                    className="flex-shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-                <span>
-                  {locating ? "Detecting location…" : "Use my location"}
-                </span>
-              </button>
-
-              {locationError && (
-                <p
-                  className="font-body text-xs px-1"
-                  style={{ color: "var(--color-coral)" }}
-                  data-ocid="location.error_state"
-                  role="alert"
-                >
-                  {locationError}
-                </p>
-              )}
+                Favorite Mother-In-Law's Ocean
+              </h1>
             </div>
-
-            {!selectedSpot && !locating && (
-              <p
-                className="mt-4 font-body text-sm"
-                style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
-              >
-                ↑ Tap a preset to load conditions, or click{" "}
-                <span style={{ color: "var(--color-electric)" }}>+</span> to add
-                a new spot
-              </p>
-            )}
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* DASHBOARD */}
         {selectedSpot && (
@@ -1952,7 +1957,10 @@ export default function App() {
                     >
                       Today's Conditions
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+                    <div
+                      ref={conditionGridRef}
+                      className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
+                    >
                       {tileOrder.map((tileId, idx) => {
                         const isWide =
                           tileId === "tide" || tileId === "forecast";
@@ -2035,30 +2043,54 @@ export default function App() {
                                       7-Day Forecast
                                     </h3>
                                   </div>
-                                  <div
-                                    className="px-4 pb-4 grid gap-2"
-                                    style={{
-                                      gridTemplateColumns: "repeat(7, 1fr)",
-                                    }}
-                                  >
-                                    {data.dailyDates
-                                      .slice(0, 7)
-                                      .map((date, i) => (
-                                        <ForecastCard
-                                          key={date}
-                                          date={date}
-                                          waveMax={data.dailyWaveMax[i] ?? 1}
-                                          waveDir={data.dailyWaveDir[i] ?? 270}
-                                          windSpeed={
-                                            data.dailyWindSpeed[i] ?? 15
-                                          }
-                                          index={i}
-                                          displayHeight={displayHeight}
-                                          heightLabel={heightLabel}
-                                          displaySpeed={displaySpeed}
-                                          speedLabel={speedLabel}
-                                        />
-                                      ))}
+                                  <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
+                                    <div
+                                      className="grid gap-2"
+                                      style={{
+                                        gridTemplateColumns:
+                                          "repeat(7, minmax(90px, 1fr))",
+                                        minWidth: "min-content",
+                                      }}
+                                    >
+                                      {(() => {
+                                        const nowLocalMs =
+                                          Date.now() +
+                                          (data.utcOffsetSeconds ?? 0) * 1000;
+                                        const nowLocal = new Date(nowLocalMs);
+                                        const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+                                        const todayIdx = Math.max(
+                                          0,
+                                          data.dailyDates.findIndex(
+                                            (d) => d === todayStr,
+                                          ),
+                                        );
+                                        return data.dailyDates
+                                          .slice(todayIdx, todayIdx + 7)
+                                          .map((date, j) => {
+                                            const i = todayIdx + j;
+                                            return (
+                                              <ForecastCard
+                                                key={date}
+                                                date={date}
+                                                waveMax={
+                                                  data.dailyWaveMax[i] ?? 1
+                                                }
+                                                waveDir={
+                                                  data.dailyWaveDir[i] ?? 270
+                                                }
+                                                windSpeed={
+                                                  data.dailyWindSpeed[i] ?? 15
+                                                }
+                                                index={j}
+                                                displayHeight={displayHeight}
+                                                heightLabel={heightLabel}
+                                                displaySpeed={displaySpeed}
+                                                speedLabel={speedLabel}
+                                              />
+                                            );
+                                          });
+                                      })()}
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -2067,30 +2099,22 @@ export default function App() {
                         return (
                           <div
                             key={tileId}
-                            draggable
-                            onDragStart={() => {
-                              dragTileRef.current = idx;
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                            }}
-                            onDrop={() => {
-                              if (
-                                dragTileRef.current === null ||
-                                dragTileRef.current === idx
-                              )
-                                return;
-                              const next = [...tileOrder];
-                              const [moved] = next.splice(
-                                dragTileRef.current,
-                                1,
-                              );
-                              next.splice(idx, 0, moved);
-                              setTileOrder(next);
-                              dragTileRef.current = null;
-                            }}
+                            {...getTileHandlers(idx)}
                             className={isWide ? "col-span-2 md:col-span-5" : ""}
-                            style={{ cursor: "grab" }}
+                            style={{
+                              cursor:
+                                activeTileIndex === idx ? "grabbing" : "grab",
+                              opacity: activeTileIndex === idx ? 0.5 : 1,
+                              outline:
+                                overTileIndex === idx && activeTileIndex !== idx
+                                  ? "2px solid var(--color-electric)"
+                                  : "none",
+                              outlineOffset: "2px",
+                              borderRadius: "12px",
+                              transition:
+                                "opacity 0.15s ease, outline 0.15s ease",
+                              touchAction: "none",
+                            }}
                             data-ocid={`conditions.item.${idx + 1}`}
                           >
                             {tileContent}
@@ -2104,15 +2128,6 @@ export default function App() {
                     >
                       Drag tiles to reorder
                     </p>
-                  </section>
-
-                  {/* CONDITIONS SUMMARY */}
-                  <section>
-                    <ConditionsSummary
-                      data={data}
-                      displayHeight={displayHeight}
-                      heightLabel={heightLabel}
-                    />
                   </section>
                 </>
               )}

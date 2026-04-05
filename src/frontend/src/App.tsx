@@ -1630,12 +1630,15 @@ export default function App() {
         {/* HEADER */}
         <header className="px-6 md:px-12 pt-8 pb-2">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div
-              className="font-display font-black tracking-[0.15em] text-2xl"
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="font-display font-black tracking-[0.15em] text-2xl cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-opacity"
               style={{ color: "var(--color-electric)" }}
+              aria-label="Refresh app"
             >
               SWELL
-            </div>
+            </button>
             <div className="flex items-center gap-4">
               <div
                 className="font-body text-xs tracking-widest uppercase"
@@ -1880,9 +1883,9 @@ export default function App() {
           >
             <div className="max-w-7xl mx-auto">
               <h1
-                className="font-display font-black text-white leading-none mb-8"
+                className="font-display font-black text-white leading-none mb-8 whitespace-nowrap"
                 style={{
-                  fontSize: "clamp(3rem, 8vw, 7rem)",
+                  fontSize: "clamp(0.9rem, 4.5vw, 7rem)",
                   letterSpacing: "-0.02em",
                 }}
               >

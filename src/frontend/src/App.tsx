@@ -854,7 +854,7 @@ function PresetBar({
                     type="button"
                     onClick={() => setModalSlot(i)}
                     data-ocid={`preset.item.${i + 1}`}
-                    className="group flex items-center gap-2 rounded-full px-4 py-2 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95"
+                    className="group flex items-center gap-2 rounded-full px-4 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
                     style={{
                       background: isDragTarget
                         ? "rgba(0,180,216,0.12)"
@@ -918,7 +918,7 @@ function PresetBar({
                   type="button"
                   onClick={() => loadSpot(spot)}
                   data-ocid={`preset.item.${i + 1}`}
-                  className="flex items-center gap-2 rounded-full pl-4 pr-8 py-2 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2 rounded-full pl-4 pr-8 py-2.5 font-body text-sm font-medium transition-all duration-200 hover:scale-105 active:scale-95 min-h-[44px]"
                   style={{
                     background: isSelected
                       ? "var(--color-electric)"
@@ -1012,7 +1012,7 @@ function StatCard({
 
   return (
     <div
-      className="relative flex flex-col gap-2 rounded-xl p-6 flex-1 min-w-0"
+      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1035,10 +1035,10 @@ function StatCard({
           {label}
         </span>
       </div>
-      <div className="flex items-baseline gap-2 leading-none">
+      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
           className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(2.5rem, 5vw, 4.5rem)", lineHeight: 1 }}
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
         >
           {countedStr}
         </span>
@@ -1056,7 +1056,7 @@ function StatCard({
 function CompassCard({ degrees }: { degrees: number }) {
   return (
     <div
-      className="relative flex flex-col items-center justify-center rounded-xl p-6 flex-1 min-w-0"
+      className="relative flex flex-col items-center justify-center rounded-xl p-4 sm:p-6 flex-1 min-w-0 min-h-[140px]"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1079,10 +1079,11 @@ function CompassCard({ degrees }: { degrees: number }) {
           alignItems: "center",
           justifyContent: "center",
         }}
+        className="w-20 h-20"
       >
         <svg
-          width="80"
-          height="80"
+          width="100%"
+          height="100%"
           viewBox="0 0 20 20"
           fill="none"
           role="img"
@@ -1183,10 +1184,11 @@ function ForecastCard({
           alignItems: "center",
           justifyContent: "center",
         }}
+        className="w-7 h-7 flex-shrink-0"
       >
         <svg
-          width="28"
-          height="28"
+          width="100%"
+          height="100%"
           viewBox="0 0 20 20"
           fill="none"
           role="img"
@@ -2010,50 +2012,54 @@ export default function App() {
                                       7-Day Forecast
                                     </h3>
                                   </div>
-                                  <div
-                                    className="px-4 pb-4 grid gap-2"
-                                    style={{
-                                      gridTemplateColumns: "repeat(7, 1fr)",
-                                    }}
-                                  >
-                                    {(() => {
-                                      const nowLocalMs =
-                                        Date.now() +
-                                        (data.utcOffsetSeconds ?? 0) * 1000;
-                                      const nowLocal = new Date(nowLocalMs);
-                                      const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
-                                      const todayIdx = Math.max(
-                                        0,
-                                        data.dailyDates.findIndex(
-                                          (d) => d === todayStr,
-                                        ),
-                                      );
-                                      return data.dailyDates
-                                        .slice(todayIdx, todayIdx + 7)
-                                        .map((date, j) => {
-                                          const i = todayIdx + j;
-                                          return (
-                                            <ForecastCard
-                                              key={date}
-                                              date={date}
-                                              waveMax={
-                                                data.dailyWaveMax[i] ?? 1
-                                              }
-                                              waveDir={
-                                                data.dailyWaveDir[i] ?? 270
-                                              }
-                                              windSpeed={
-                                                data.dailyWindSpeed[i] ?? 15
-                                              }
-                                              index={j}
-                                              displayHeight={displayHeight}
-                                              heightLabel={heightLabel}
-                                              displaySpeed={displaySpeed}
-                                              speedLabel={speedLabel}
-                                            />
-                                          );
-                                        });
-                                    })()}
+                                  <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
+                                    <div
+                                      className="grid gap-2"
+                                      style={{
+                                        gridTemplateColumns:
+                                          "repeat(7, minmax(90px, 1fr))",
+                                        minWidth: "min-content",
+                                      }}
+                                    >
+                                      {(() => {
+                                        const nowLocalMs =
+                                          Date.now() +
+                                          (data.utcOffsetSeconds ?? 0) * 1000;
+                                        const nowLocal = new Date(nowLocalMs);
+                                        const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+                                        const todayIdx = Math.max(
+                                          0,
+                                          data.dailyDates.findIndex(
+                                            (d) => d === todayStr,
+                                          ),
+                                        );
+                                        return data.dailyDates
+                                          .slice(todayIdx, todayIdx + 7)
+                                          .map((date, j) => {
+                                            const i = todayIdx + j;
+                                            return (
+                                              <ForecastCard
+                                                key={date}
+                                                date={date}
+                                                waveMax={
+                                                  data.dailyWaveMax[i] ?? 1
+                                                }
+                                                waveDir={
+                                                  data.dailyWaveDir[i] ?? 270
+                                                }
+                                                windSpeed={
+                                                  data.dailyWindSpeed[i] ?? 15
+                                                }
+                                                index={j}
+                                                displayHeight={displayHeight}
+                                                heightLabel={heightLabel}
+                                                displaySpeed={displaySpeed}
+                                                speedLabel={speedLabel}
+                                              />
+                                            );
+                                          });
+                                      })()}
+                                    </div>
                                   </div>
                                 </div>
                               );

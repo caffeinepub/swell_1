@@ -206,3 +206,14 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ─── Safe area insets (iPhone notch / home indicator) ──────────────────── */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  footer {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+}

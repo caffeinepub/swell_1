@@ -1,24 +1,40 @@
 import {
+  ArrowLeft,
+  Cloud,
   Compass,
+  Droplets,
+  Eye,
+  Gauge,
   GripVertical,
+  Info,
   LocateFixed,
   Pencil,
   Plus,
   Search,
   Settings,
+  Sun,
+  Sunrise,
+  Sunset,
   Thermometer,
   Waves,
   Wind,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HeroWaveCanvas from "./components/HeroWaveCanvas";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "./components/ui/popover";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "./components/ui/sheet";
+import { Switch } from "./components/ui/switch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Spot = {
@@ -44,8 +60,25 @@ interface ConditionsData {
   dailyWindSpeed: number[];
   swellPeriod: number;
   dailySwellPeriod: number[];
-  tideHeights: number[]; // 24 hourly sea-level values for today (metres, local time)
-  utcOffsetSeconds: number; // location UTC offset in seconds
+  tideHeights: number[];
+  utcOffsetSeconds: number;
+  // New optional fields
+  windGust?: number;
+  windSpeed80m?: number;
+  pressure?: number;
+  visibility?: number;
+  humidity?: number;
+  dewPoint?: number;
+  uvIndex?: number;
+  cloudCover?: number;
+  precipitation?: number;
+  swellHeight?: number;
+  swellPeriod2?: number;
+  windWaveHeight?: number;
+  windWavePeriod?: number;
+  seaTemp?: number;
+  sunrise?: string;
+  sunset?: string;
 }
 
 interface GeoResult {
@@ -56,6 +89,183 @@ interface GeoResult {
   timezone: string;
   admin1?: string;
 }
+
+// ─── Tile catalog ─────────────────────────────────────────────────────────────
+type TileId =
+  | "wave"
+  | "wind"
+  | "direction"
+  | "waterTemp"
+  | "airTemp"
+  | "period"
+  | "tide"
+  | "forecast"
+  | "windGust"
+  | "windSpeed80m"
+  | "pressure"
+  | "visibility"
+  | "humidity"
+  | "dewPoint"
+  | "uvIndex"
+  | "cloudCover"
+  | "precipitation"
+  | "swellHeight"
+  | "swellPeriod2"
+  | "windWaveHeight"
+  | "windWavePeriod"
+  | "seaTemp"
+  | "sunrise"
+  | "sunset";
+
+const ALL_TILE_IDS: TileId[] = [
+  "wave",
+  "wind",
+  "direction",
+  "waterTemp",
+  "airTemp",
+  "period",
+  "tide",
+  "forecast",
+  "windGust",
+  "windSpeed80m",
+  "pressure",
+  "visibility",
+  "humidity",
+  "dewPoint",
+  "uvIndex",
+  "cloudCover",
+  "precipitation",
+  "swellHeight",
+  "swellPeriod2",
+  "windWaveHeight",
+  "windWavePeriod",
+  "seaTemp",
+  "sunrise",
+  "sunset",
+];
+
+const TILE_CATALOG: Record<TileId, { label: string; description: string }> = {
+  wave: {
+    label: "Wave Height",
+    description:
+      "Significant wave height combining swell and wind chop. Represents the average of the highest third of waves at this location.",
+  },
+  wind: {
+    label: "Wind Speed",
+    description:
+      "Wind speed at 10 metres above sea level — the standard meteorological measurement height used worldwide.",
+  },
+  direction: {
+    label: "Wind Direction",
+    description:
+      "The compass direction the wind is blowing FROM. NNW means wind coming from the north-northwest — important for shelter and sail trim.",
+  },
+  waterTemp: {
+    label: "Water Temp",
+    description:
+      "Apparent temperature accounting for wind chill effect. Useful for assessing on-deck comfort and crew clothing decisions.",
+  },
+  airTemp: {
+    label: "Air Temp",
+    description:
+      "Air temperature at 2 metres above ground level at the selected location.",
+  },
+  period: {
+    label: "Wave Period",
+    description:
+      "Dominant wave period in seconds — the time between successive wave crests. Longer periods (10s+) indicate powerful, organised swell from distant storms.",
+  },
+  tide: {
+    label: "Tide Chart",
+    description:
+      "Hourly tide height for today, plotted against local time at the selected location. Heights referenced to approximate Chart Datum (lowest tide level).",
+  },
+  forecast: {
+    label: "7-Day Forecast",
+    description:
+      "Daily wave height, wind speed and direction for the coming week. Tap any day to see that day's conditions in detail.",
+  },
+  windGust: {
+    label: "Wind Gusts",
+    description:
+      "Peak wind speed in short bursts, which can be 30–50% stronger than the average wind. Critical for sail selection, reefing decisions, and safety at sea.",
+  },
+  windSpeed80m: {
+    label: "Wind at 80m",
+    description:
+      "Wind speed at 80 metres above sea level — much closer to mast height than the standard 10m reading. More relevant for actual sailing performance.",
+  },
+  pressure: {
+    label: "Pressure",
+    description:
+      "Atmospheric pressure in hectopascals (hPa). A falling barometer warns of approaching bad weather; a rising barometer signals improving conditions.",
+  },
+  visibility: {
+    label: "Visibility",
+    description:
+      "How far you can see horizontally. Low visibility increases collision risk and complicates navigation — fog or haze can develop quickly at sea.",
+  },
+  humidity: {
+    label: "Humidity",
+    description:
+      "Relative humidity as a percentage. High humidity combined with cool air can cause coastal fog, heavy dew on deck, and increased corrosion risk.",
+  },
+  dewPoint: {
+    label: "Dew Point",
+    description:
+      "Temperature at which moisture condenses from the air. When the dew point is close to air temperature, fog or heavy condensation on deck is likely.",
+  },
+  uvIndex: {
+    label: "UV Index",
+    description:
+      "Solar UV radiation intensity on a 0–11+ scale. Plan sun protection for any exposed passages — UV is especially intense on the water due to reflection.",
+  },
+  cloudCover: {
+    label: "Cloud Cover",
+    description:
+      "Percentage of sky covered by cloud. Affects solar heating, visibility for celestial navigation, and can indicate changing weather systems.",
+  },
+  precipitation: {
+    label: "Rain Chance",
+    description:
+      "Probability of precipitation in the current period. Useful for timing passages and planning crew comfort — squalls at sea can reduce visibility rapidly.",
+  },
+  swellHeight: {
+    label: "Swell Height",
+    description:
+      "Height of pure ocean swell generated by distant storms — more organised and longer-period than locally wind-generated waves. Key for offshore passage planning.",
+  },
+  swellPeriod2: {
+    label: "Swell Period",
+    description:
+      "Period of pure ocean swell from distant storms. Values above 12 seconds indicate powerful, long-distance swell travelling from far-off weather systems.",
+  },
+  windWaveHeight: {
+    label: "Wind Wave Height",
+    description:
+      "Height of locally wind-generated waves — short, choppy, and disorganised compared to ocean swell. Often determines comfort rather than danger.",
+  },
+  windWavePeriod: {
+    label: "Wind Wave Period",
+    description:
+      "Period of locally wind-generated waves. Short periods under 6 seconds produce uncomfortable, steep, breaking sea states that are hard on crew and gear.",
+  },
+  seaTemp: {
+    label: "Sea Temp",
+    description:
+      "Sea surface temperature. Important for wetsuit selection, estimating hypothermia risk, and man-overboard survival time planning.",
+  },
+  sunrise: {
+    label: "Sunrise",
+    description:
+      "Time of sunrise at the selected location in local time. Essential for watch scheduling, passage timing, and arrival/departure planning.",
+  },
+  sunset: {
+    label: "Sunset",
+    description:
+      "Time of sunset at the selected location in local time. Plan to reach your harbour or anchorage before darkness — night approaches can be hazardous in unfamiliar waters.",
+  },
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function degreesToCompass(deg: number): string {
@@ -107,20 +317,19 @@ const STATUS_COLOR: Record<Status, string> = {
 };
 
 function dayName(dateStr: string): string {
-  // Parse as local noon to avoid UTC-midnight timezone rollover (e.g. Sun -> Sat for US browsers)
   const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
 }
 
-function conditionEmoji(wh: number, ws: number): string {
-  if (wh >= 1.5 && ws < 25) return "😄";
-  if (wh >= 0.5) return "😐";
-  return "😞";
+function fullDayName(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return d.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
 }
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 const PRESETS_KEY = "swell_presets";
 const UNITS_KEY = "swell_units";
+const DRAG_KEY = "swell_drag_enabled";
 
 type HeightUnit = "ft" | "m";
 type TempUnit = "F" | "C";
@@ -160,16 +369,26 @@ function saveUnits(u: UnitSettings): void {
   }
 }
 
+function loadDragEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(DRAG_KEY);
+    if (raw === null) return true;
+    return JSON.parse(raw) !== false;
+  } catch {
+    return true;
+  }
+}
+
+function saveDragEnabled(v: boolean): void {
+  try {
+    localStorage.setItem(DRAG_KEY, JSON.stringify(v));
+  } catch {
+    /* ignore */
+  }
+}
+
 const TILE_ORDER_KEY = "swell_tile_order";
-type TileId =
-  | "wave"
-  | "wind"
-  | "direction"
-  | "waterTemp"
-  | "airTemp"
-  | "period"
-  | "tide"
-  | "forecast";
+
 const DEFAULT_TILE_ORDER: TileId[] = [
   "wave",
   "wind",
@@ -188,20 +407,8 @@ function loadTileOrder(): TileId[] {
     const parsed = JSON.parse(raw);
     if (
       Array.isArray(parsed) &&
-      parsed.every((id: string) =>
-        [
-          "wave",
-          "wind",
-          "direction",
-          "waterTemp",
-          "airTemp",
-          "period",
-          "tide",
-          "forecast",
-        ].includes(id),
-      )
+      parsed.every((id: string) => ALL_TILE_IDS.includes(id as TileId))
     ) {
-      // Migrate old saves that lack tide/forecast
       const migrated = [...parsed] as TileId[];
       if (!migrated.includes("tide")) migrated.push("tide");
       if (!migrated.includes("forecast")) migrated.push("forecast");
@@ -223,6 +430,7 @@ function loadTileOrder(): TileId[] {
     return DEFAULT_TILE_ORDER;
   }
 }
+
 function saveTileOrder(order: TileId[]): void {
   try {
     localStorage.setItem(TILE_ORDER_KEY, JSON.stringify(order));
@@ -235,15 +443,12 @@ function saveTileOrder(order: TileId[]): void {
 function metresToFeet(m: number): number {
   return m * 3.28084;
 }
-
 function celsiusToFahrenheit(c: number): number {
   return (c * 9) / 5 + 32;
 }
-
 function kmhToKnots(k: number): number {
   return k * 0.539957;
 }
-
 function kmhToMph(k: number): number {
   return k * 0.621371;
 }
@@ -286,7 +491,6 @@ function savePresets(presets: PresetSlots): void {
 function useCountUp(target: number, duration = 1000, decimals = 1): string {
   const [val, setVal] = useState(0);
   const rafRef = useRef<number>(0);
-
   useEffect(() => {
     if (target === 0) {
       setVal(0);
@@ -302,7 +506,6 @@ function useCountUp(target: number, duration = 1000, decimals = 1): string {
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, [target, duration]);
-
   return val.toFixed(decimals);
 }
 
@@ -316,7 +519,6 @@ function useLocalTime(timezone: string): string {
       hour12: false,
     }).format(new Date()),
   );
-
   useEffect(() => {
     const fmt = new Intl.DateTimeFormat("en-GB", {
       timeZone: timezone,
@@ -329,15 +531,15 @@ function useLocalTime(timezone: string): string {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [timezone]);
-
   return time;
 }
 
-// ─── useSortable hook (pointer-event drag — works on iOS + Android) ──────────
+// ─── useSortable hook ─────────────────────────────────────────────────────────
 function useSortable<T>(
   items: T[],
   onReorder: (newItems: T[]) => void,
   containerRef: React.RefObject<HTMLElement | null>,
+  enabled = true,
 ) {
   const dragIndexRef = useRef<number | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -347,74 +549,77 @@ function useSortable<T>(
   const pointerIdRef = useRef<number | null>(null);
 
   const getHandlers = useCallback(
-    (index: number) => ({
-      onPointerDown: (e: React.PointerEvent) => {
-        if (e.button !== 0 && e.pointerType === "mouse") return;
-        dragIndexRef.current = index;
-        startPosRef.current = { x: e.clientX, y: e.clientY };
-        didDragRef.current = false;
-        pointerIdRef.current = e.pointerId;
-      },
-      onPointerMove: (e: React.PointerEvent) => {
-        if (dragIndexRef.current === null) return;
-        const dx = e.clientX - (startPosRef.current?.x ?? e.clientX);
-        const dy = e.clientY - (startPosRef.current?.y ?? e.clientY);
-        if (!didDragRef.current && Math.hypot(dx, dy) > 8) {
-          didDragRef.current = true;
-          setActiveIndex(dragIndexRef.current);
-          if (pointerIdRef.current !== null) {
-            (e.currentTarget as HTMLElement).setPointerCapture(
-              pointerIdRef.current,
-            );
+    (index: number) => {
+      if (!enabled) return {};
+      return {
+        onPointerDown: (e: React.PointerEvent) => {
+          if (e.button !== 0 && e.pointerType === "mouse") return;
+          dragIndexRef.current = index;
+          startPosRef.current = { x: e.clientX, y: e.clientY };
+          didDragRef.current = false;
+          pointerIdRef.current = e.pointerId;
+        },
+        onPointerMove: (e: React.PointerEvent) => {
+          if (dragIndexRef.current === null) return;
+          const dx = e.clientX - (startPosRef.current?.x ?? e.clientX);
+          const dy = e.clientY - (startPosRef.current?.y ?? e.clientY);
+          if (!didDragRef.current && Math.hypot(dx, dy) > 8) {
+            didDragRef.current = true;
+            setActiveIndex(dragIndexRef.current);
+            if (pointerIdRef.current !== null) {
+              (e.currentTarget as HTMLElement).setPointerCapture(
+                pointerIdRef.current,
+              );
+            }
           }
-        }
-        if (!didDragRef.current) return;
-        const container = containerRef.current;
-        if (!container) return;
-        const children = Array.from(container.children) as HTMLElement[];
-        let found = overIndex;
-        for (let i = 0; i < children.length; i++) {
-          const rect = children[i].getBoundingClientRect();
+          if (!didDragRef.current) return;
+          const container = containerRef.current;
+          if (!container) return;
+          const children = Array.from(container.children) as HTMLElement[];
+          let found = overIndex;
+          for (let i = 0; i < children.length; i++) {
+            const rect = children[i].getBoundingClientRect();
+            if (
+              e.clientX >= rect.left &&
+              e.clientX <= rect.right &&
+              e.clientY >= rect.top &&
+              e.clientY <= rect.bottom
+            ) {
+              found = i;
+              break;
+            }
+          }
+          if (found !== overIndex) setOverIndex(found);
+        },
+        onPointerUp: (e: React.PointerEvent) => {
+          if (dragIndexRef.current === null) return;
+          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
           if (
-            e.clientX >= rect.left &&
-            e.clientX <= rect.right &&
-            e.clientY >= rect.top &&
-            e.clientY <= rect.bottom
+            didDragRef.current &&
+            overIndex !== null &&
+            overIndex !== dragIndexRef.current
           ) {
-            found = i;
-            break;
+            const next = [...items];
+            const [moved] = next.splice(dragIndexRef.current, 1);
+            next.splice(overIndex, 0, moved);
+            onReorder(next);
           }
-        }
-        if (found !== overIndex) setOverIndex(found);
-      },
-      onPointerUp: (e: React.PointerEvent) => {
-        if (dragIndexRef.current === null) return;
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-        if (
-          didDragRef.current &&
-          overIndex !== null &&
-          overIndex !== dragIndexRef.current
-        ) {
-          const next = [...items];
-          const [moved] = next.splice(dragIndexRef.current, 1);
-          next.splice(overIndex, 0, moved);
-          onReorder(next);
-        }
-        dragIndexRef.current = null;
-        startPosRef.current = null;
-        didDragRef.current = false;
-        setActiveIndex(null);
-        setOverIndex(null);
-      },
-      onPointerCancel: () => {
-        dragIndexRef.current = null;
-        startPosRef.current = null;
-        didDragRef.current = false;
-        setActiveIndex(null);
-        setOverIndex(null);
-      },
-    }),
-    [items, onReorder, overIndex, containerRef],
+          dragIndexRef.current = null;
+          startPosRef.current = null;
+          didDragRef.current = false;
+          setActiveIndex(null);
+          setOverIndex(null);
+        },
+        onPointerCancel: () => {
+          dragIndexRef.current = null;
+          startPosRef.current = null;
+          didDragRef.current = false;
+          setActiveIndex(null);
+          setOverIndex(null);
+        },
+      };
+    },
+    [items, onReorder, overIndex, containerRef, enabled],
   );
 
   return { getHandlers, activeIndex, overIndex };
@@ -443,15 +648,14 @@ function geoToSpot(g: GeoResult): Spot {
 // ─── API fetch ────────────────────────────────────────────────────────────────
 async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   const { lat, lng } = spot;
-  // Use timezone=auto to let Open-Meteo detect from coordinates (works for location-detected spots too)
   const tz =
     spot.timezone === "auto" ? "auto" : encodeURIComponent(spot.timezone);
   const [marineRes, weatherRes] = await Promise.all([
     fetch(
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,swell_wave_period,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant,swell_wave_period_max&timezone=${tz}&past_days=16&forecast_days=16`,
+      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,swell_wave_period,swell_wave_height,wind_wave_height,wind_wave_period,sea_surface_temperature,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant,swell_wave_period_max&timezone=${tz}&past_days=16&forecast_days=16`,
     ),
     fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=windspeed_10m,winddirection_10m,apparent_temperature,temperature_2m&daily=windspeed_10m_max&current_weather=true&timezone=${tz}`,
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=windspeed_10m,winddirection_10m,apparent_temperature,temperature_2m,windgusts_10m,windspeed_80m,surface_pressure,visibility,relative_humidity_2m,dew_point_2m,uv_index,cloud_cover,precipitation_probability&daily=windspeed_10m_max,sunrise,sunset&current_weather=true&timezone=${tz}`,
     ),
   ]);
   const [marine, weather] = await Promise.all([
@@ -459,18 +663,15 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     weatherRes.json(),
   ]);
 
-  // Use the location's UTC offset (from the marine API) to determine local time
-  // at the *spot*, not the browser's local timezone. This ensures the current-hour
-  // index is correct regardless of where the user's device is located.
   const utcOffsetSeconds: number = marine.utc_offset_seconds ?? 0;
   const nowLocalMs = Date.now() + utcOffsetSeconds * 1000;
   const nowLocal = new Date(nowLocalMs);
   const currentHourStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}T${String(nowLocal.getUTCHours()).padStart(2, "0")}:00`;
+
   const hourlyTimes: string[] = marine.hourly?.time ?? [];
   let hi = hourlyTimes.findIndex((t: string) => t === currentHourStr);
-  // Fallback: find the closest available hour rather than silently using index 0 (which is 16 days ago)
   if (hi < 0) {
-    hi = hourlyTimes.reduce((best, t, idx) => {
+    hi = hourlyTimes.reduce((best: number, t: string, idx: number) => {
       const diff = Math.abs(
         new Date(t).getTime() - (Date.now() + utcOffsetSeconds * 1000),
       );
@@ -485,7 +686,7 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   const wHourlyTimes: string[] = weather.hourly?.time ?? [];
   let wi = wHourlyTimes.findIndex((t: string) => t === currentHourStr);
   if (wi < 0) {
-    wi = wHourlyTimes.reduce((best, t, idx) => {
+    wi = wHourlyTimes.reduce((best: number, t: string, idx: number) => {
       const diff = Math.abs(
         new Date(t).getTime() - (Date.now() + utcOffsetSeconds * 1000),
       );
@@ -512,7 +713,6 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   const airTemp = weather.hourly?.temperature_2m?.[wi] ?? 20;
   const dailyWindSpeed: number[] =
     weather.daily?.windspeed_10m_max ?? Array(7).fill(15);
-
   const dailyWaveMax: number[] = marine.daily?.wave_height_max ?? [
     1, 1.2, 0.8, 1.5, 2, 1.8, 1.1,
   ];
@@ -528,20 +728,47 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
       return d.toISOString().slice(0, 10);
     });
 
-  // Extract today's tide heights (24 hourly values in location local time)
-  // The marine API returns sea_level_height_msl referenced to Mean Sea Level (MSL),
-  // NOT to Chart Datum (LAT/CD). To convert to Chart Datum-referenced heights
-  // (matching official tide tables), we compute a Chart Datum offset by finding
-  // the global minimum over a wide ±16-day window (proxy for Lowest Astronomical Tide).
+  // New fields
+  const windGust: number | undefined = weather.hourly?.windgusts_10m?.[wi];
+  const windSpeed80m: number | undefined = weather.hourly?.windspeed_80m?.[wi];
+  const pressure: number | undefined = weather.hourly?.surface_pressure?.[wi];
+  const visibility: number | undefined = weather.hourly?.visibility?.[wi];
+  const humidity: number | undefined =
+    weather.hourly?.relative_humidity_2m?.[wi];
+  const dewPoint: number | undefined = weather.hourly?.dew_point_2m?.[wi];
+  const uvIndex: number | undefined = weather.hourly?.uv_index?.[wi];
+  const cloudCover: number | undefined = weather.hourly?.cloud_cover?.[wi];
+  const precipitation: number | undefined =
+    weather.hourly?.precipitation_probability?.[wi];
+  const swellHeight: number | undefined =
+    marine.hourly?.swell_wave_height?.[hi];
+  const swellPeriod2: number | undefined =
+    marine.hourly?.swell_wave_period?.[hi];
+  const windWaveHeight: number | undefined =
+    marine.hourly?.wind_wave_height?.[hi];
+  const windWavePeriod: number | undefined =
+    marine.hourly?.wind_wave_period?.[hi];
+  const seaTemp: number | undefined =
+    marine.hourly?.sea_surface_temperature?.[hi];
 
+  // Sunrise/sunset — format as HH:MM local time string
+  function formatTimeStr(isoStr: string | undefined): string | undefined {
+    if (!isoStr) return undefined;
+    try {
+      const d = new Date(isoStr);
+      return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    } catch {
+      return undefined;
+    }
+  }
+  const sunrise = formatTimeStr(weather.daily?.sunrise?.[0]);
+  const sunset = formatTimeStr(weather.daily?.sunset?.[0]);
+
+  // Tide heights
   const allTideHeights: (number | null)[] =
     marine.hourly?.sea_level_height_msl ?? [];
   const marineHourlyTimes: string[] = marine.hourly?.time ?? [];
-
-  // Find today's date in the location's local timezone using the UTC offset
-  // (utcOffsetSeconds, nowLocalMs, nowLocal already computed above)
   const todayDateStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
-
   const todayStartIdx = marineHourlyTimes.findIndex((t: string) =>
     t.startsWith(todayDateStr),
   );
@@ -549,25 +776,21 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     todayStartIdx >= 0
       ? (allTideHeights.slice(todayStartIdx, todayStartIdx + 24) as number[])
       : Array(24).fill(null);
-  // Fill nulls with linear interpolation from neighbours, or 0 as fallback
   const rawTideFilled: number[] = rawTide.map((v, i, arr) => {
     if (v !== null && v !== undefined) return v as number;
     let lo = i - 1;
-    let hi = i + 1;
+    let hi2 = i + 1;
     while (lo >= 0 && (arr[lo] === null || arr[lo] === undefined)) lo--;
-    while (hi < arr.length && (arr[hi] === null || arr[hi] === undefined)) hi++;
+    while (hi2 < arr.length && (arr[hi2] === null || arr[hi2] === undefined))
+      hi2++;
     const loVal = lo >= 0 ? arr[lo] : null;
-    const hiVal = hi < arr.length ? arr[hi] : null;
+    const hiVal = hi2 < arr.length ? arr[hi2] : null;
     if (loVal !== null && hiVal !== null)
       return ((loVal as number) + (hiVal as number)) / 2;
     if (loVal !== null) return loVal as number;
     if (hiVal !== null) return hiVal as number;
     return 0;
   });
-  // Compute Chart Datum offset: the global minimum over the full ±16-day window
-  // approximates Lowest Astronomical Tide (LAT), which is 0m on Admiralty charts.
-  // Subtracting this offset converts MSL-referenced values to Chart Datum-referenced
-  // values matching official tide tables (e.g. +1.4m low, +12.6m high for Bristol).
   const allValidHeights = allTideHeights.filter(
     (v): v is number => typeof v === "number" && Number.isFinite(v),
   );
@@ -590,6 +813,22 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
     dailySwellPeriod,
     tideHeights,
     utcOffsetSeconds,
+    windGust,
+    windSpeed80m,
+    pressure,
+    visibility,
+    humidity,
+    dewPoint,
+    uvIndex,
+    cloudCover,
+    precipitation,
+    swellHeight,
+    swellPeriod2,
+    windWaveHeight,
+    windWavePeriod,
+    seaTemp,
+    sunrise,
+    sunset,
   };
 }
 
@@ -617,7 +856,6 @@ function SearchModal({
     inputRef.current?.focus();
   }, []);
 
-  // Escape key handler
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -650,7 +888,7 @@ function SearchModal({
   }, [query]);
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click to close is a standard modal UX pattern
+    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click to close
     <div
       className="fixed inset-0 flex items-center justify-center"
       style={{
@@ -668,13 +906,11 @@ function SearchModal({
           background:
             "linear-gradient(145deg, rgba(13,30,52,0.98) 0%, rgba(2,13,24,0.99) 100%)",
           border: "1px solid rgba(13,79,110,0.7)",
-          boxShadow:
-            "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(0,180,216,0.08)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
         }}
         data-ocid="search.modal"
         aria-label={`Assign spot to Preset ${slotIndex + 1}`}
       >
-        {/* Modal header */}
         <div
           className="flex items-center justify-between px-6 py-4"
           style={{ borderBottom: "1px solid rgba(13,79,110,0.4)" }}
@@ -699,14 +935,11 @@ function SearchModal({
               border: "1px solid rgba(13,79,110,0.5)",
               color: "var(--color-seafoam)",
             }}
-            data-ocid="search.close_button"
             aria-label="Close search"
           >
             <X size={14} />
           </button>
         </div>
-
-        {/* Search input */}
         <div className="px-6 pt-5 pb-3">
           <div
             className="flex items-center gap-3 rounded-xl px-4 py-3"
@@ -726,7 +959,6 @@ function SearchModal({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="e.g. Pipeline, Hossegor, Uluwatu…"
               className="flex-1 bg-transparent outline-none font-body text-sm text-white placeholder:opacity-40"
-              data-ocid="search.input"
               aria-label="Search for a surf spot"
             />
             {searching && (
@@ -736,13 +968,10 @@ function SearchModal({
                   borderColor: "var(--color-electric)",
                   borderTopColor: "transparent",
                 }}
-                aria-label="Searching..."
               />
             )}
           </div>
         </div>
-
-        {/* Clear option */}
         {currentSlot && (
           <div className="px-6 pb-3">
             <button
@@ -757,14 +986,11 @@ function SearchModal({
                 border: "1px solid rgba(255,107,71,0.3)",
                 color: "var(--color-coral)",
               }}
-              data-ocid="search.cancel_button"
             >
               ✕ &nbsp;Clear "{currentSlot.name}" from this preset
             </button>
           </div>
         )}
-
-        {/* Results list */}
         <div
           className="max-h-64 overflow-y-auto"
           style={{
@@ -776,7 +1002,6 @@ function SearchModal({
             <div
               className="px-6 py-8 text-center font-body text-sm"
               style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
-              data-ocid="search.empty_state"
             >
               No spots found for "{query}"
             </div>
@@ -808,7 +1033,6 @@ function SearchModal({
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLButtonElement).style.background = "";
               }}
-              data-ocid={`search.item.${i + 1}`}
             >
               <div
                 className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -840,8 +1064,6 @@ function SearchModal({
             </button>
           ))}
         </div>
-
-        {/* Bottom padding */}
         <div className="h-4" />
       </dialog>
     </div>
@@ -854,33 +1076,32 @@ function PresetBar({
   setPresets,
   selectedSpot,
   loadSpot,
+  dragEnabled,
 }: {
   presets: PresetSlots;
   setPresets: (presets: PresetSlots) => void;
   selectedSpot: Spot | null;
   loadSpot: (spot: Spot) => void;
+  dragEnabled: boolean;
 }) {
   const [modalSlot, setModalSlot] = useState<number | null>(null);
-
   const handleSelect = (spot: Spot, slotIndex: number) => {
     const next = [...presets];
     next[slotIndex] = spot;
     setPresets(next);
     loadSpot(spot);
   };
-
   const handleClear = (slotIndex: number) => {
     const next = [...presets];
     next[slotIndex] = null;
     setPresets(next);
   };
-
   const presetBarRef = useRef<HTMLDivElement | null>(null);
   const {
     getHandlers: getPresetHandlers,
     activeIndex: activePresetIndex,
     overIndex: overPresetIndex,
-  } = useSortable(presets, setPresets, presetBarRef);
+  } = useSortable(presets, setPresets, presetBarRef, dragEnabled);
 
   return (
     <>
@@ -893,7 +1114,6 @@ function PresetBar({
             const isEmpty = spot === null;
             const isDraggingThis = activePresetIndex === i;
             const isDragTarget = overPresetIndex === i;
-
             if (isEmpty) {
               return (
                 <div
@@ -902,14 +1122,13 @@ function PresetBar({
                   className="w-full"
                   style={{
                     borderRadius: 9999,
-                    transition:
-                      "box-shadow 0.15s ease, border-color 0.15s ease, outline 0.15s ease",
+                    transition: "outline 0.15s ease",
                     outline:
                       overPresetIndex === i && activePresetIndex !== i
                         ? "2px solid var(--color-electric)"
                         : "none",
                     outlineOffset: "2px",
-                    touchAction: "none",
+                    touchAction: dragEnabled ? "none" : "auto",
                   }}
                 >
                   <button
@@ -931,7 +1150,6 @@ function PresetBar({
                     }}
                     aria-label={`Set Preset ${i + 1}`}
                   >
-                    {/* Drag handle placeholder for alignment */}
                     <span
                       className="flex-shrink-0"
                       style={{ color: "rgba(168,216,200,0.2)", width: 16 }}
@@ -952,7 +1170,6 @@ function PresetBar({
                 </div>
               );
             }
-
             return (
               <div
                 key={`slot-filled-${i + 1}`}
@@ -962,13 +1179,17 @@ function PresetBar({
                   opacity: isDraggingThis ? 0.45 : 1,
                   transition: "opacity 0.15s ease, outline 0.15s ease",
                   borderRadius: 9999,
-                  cursor: isDraggingThis ? "grabbing" : "grab",
+                  cursor: dragEnabled
+                    ? isDraggingThis
+                      ? "grabbing"
+                      : "grab"
+                    : "default",
                   outline:
                     isDragTarget && !isDraggingThis
                       ? "2px solid var(--color-electric)"
                       : "none",
                   outlineOffset: "2px",
-                  touchAction: "none",
+                  touchAction: dragEnabled ? "none" : "auto",
                 }}
               >
                 <button
@@ -981,11 +1202,7 @@ function PresetBar({
                     background: isSelected
                       ? "rgba(0,180,216,0.18)"
                       : "rgba(13,79,110,0.25)",
-                    border: `1px solid ${
-                      isSelected
-                        ? "rgba(0,180,216,0.7)"
-                        : "rgba(0,180,216,0.22)"
-                    }`,
+                    border: `1px solid ${isSelected ? "rgba(0,180,216,0.7)" : "rgba(0,180,216,0.22)"}`,
                     color: isSelected
                       ? "var(--color-electric)"
                       : "rgba(255,255,255,0.85)",
@@ -995,7 +1212,6 @@ function PresetBar({
                   aria-label={`Load ${spot.name}`}
                   aria-pressed={isSelected}
                 >
-                  {/* Always-visible drag handle */}
                   <span
                     className="flex-shrink-0"
                     style={{
@@ -1017,7 +1233,6 @@ function PresetBar({
                     />
                   )}
                 </button>
-                {/* Edit button — always visible on the right */}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1044,7 +1259,6 @@ function PresetBar({
           })}
         </div>
       </fieldset>
-
       {modalSlot !== null && (
         <SearchModal
           slotIndex={modalSlot}
@@ -1059,7 +1273,6 @@ function PresetBar({
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
 function StatCard({
   label,
   value,
@@ -1067,6 +1280,7 @@ function StatCard({
   status,
   icon,
   decimals = 1,
+  yellowValue = false,
 }: {
   label: string;
   value: number;
@@ -1074,10 +1288,10 @@ function StatCard({
   status: Status;
   icon: React.ReactNode;
   decimals?: number;
+  yellowValue?: boolean;
 }) {
   const countedStr = useCountUp(value, 1000, decimals);
   const color = STATUS_COLOR[status];
-
   return (
     <div
       className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
@@ -1105,8 +1319,12 @@ function StatCard({
       </div>
       <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
-          className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+          className="font-display font-extrabold"
+          style={{
+            fontSize: "clamp(1.8rem, 6vw, 4.5rem)",
+            lineHeight: 1,
+            color: yellowValue ? "#FFE033" : "white",
+          }}
         >
           {countedStr}
         </span>
@@ -1115,6 +1333,44 @@ function StatCard({
           style={{ color: "var(--color-electric)", opacity: 0.8 }}
         >
           {unit}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TimeCard({
+  label,
+  value,
+  icon,
+}: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div
+      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
+      style={{
+        background:
+          "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
+        border: "1px solid rgba(13,79,110,0.6)",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+          {icon}
+        </span>
+        <span
+          className="text-xs font-body tracking-widest uppercase"
+          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
+        <span
+          className="font-display font-extrabold text-white"
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+        >
+          {value}
         </span>
       </div>
     </div>
@@ -1173,6 +1429,8 @@ function ForecastCard({
   displaySpeed,
   speedLabel,
   swellPeriod,
+  isSelected,
+  onClick,
 }: {
   date: string;
   waveMax: number;
@@ -1184,25 +1442,35 @@ function ForecastCard({
   heightLabel: string;
   displaySpeed: (k: number) => number;
   speedLabel: string;
+  isSelected: boolean;
+  onClick: () => void;
 }) {
   const maxBar = 3.5;
   const barH = Math.min((waveMax / maxBar) * 60, 60);
-  const _emoji = conditionEmoji(waveMax, 20);
   const compassDir = degreesToCompass(waveDir);
-
   return (
-    <div
-      className="forecast-card flex flex-col items-center gap-2 rounded-xl px-2 py-5 w-full"
+    <button
+      type="button"
+      onClick={onClick}
+      className="forecast-card flex flex-col items-center gap-2 rounded-xl px-2 py-5 w-full transition-all duration-200"
       style={{
         animationDelay: `${index * 50}ms`,
-        background: "rgba(13,79,110,0.25)",
-        border: "1px solid rgba(13,79,110,0.5)",
+        background: isSelected
+          ? "rgba(0,180,216,0.18)"
+          : "rgba(13,79,110,0.25)",
+        border: isSelected
+          ? "2px solid var(--color-electric)"
+          : "1px solid rgba(13,79,110,0.5)",
+        boxShadow: isSelected ? "0 0 16px rgba(0,180,216,0.35)" : "none",
+        cursor: "pointer",
       }}
       data-ocid={`forecast.item.${index + 1}`}
     >
       <span
         className="font-body text-sm tracking-widest font-semibold"
-        style={{ color: "var(--color-seafoam)" }}
+        style={{
+          color: isSelected ? "var(--color-electric)" : "var(--color-seafoam)",
+        }}
       >
         {dayName(date)}
       </span>
@@ -1223,7 +1491,10 @@ function ForecastCard({
         {heightLabel}
       </span>
       {swellPeriod > 0 && (
-        <span className="font-display font-bold text-white text-base">
+        <span
+          className="font-display font-bold text-base"
+          style={{ color: "#FFE033" }}
+        >
           {swellPeriod.toFixed(0)}s
         </span>
       )}
@@ -1270,7 +1541,7 @@ function ForecastCard({
           <circle cx="10" cy="10" r="1.5" fill="rgba(168,216,200,0.6)" />
         </svg>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -1288,14 +1559,11 @@ function TideChart({
   const svgRef = useRef<SVGPathElement>(null);
   const W = 800;
   const H = 160;
-
-  // Build 24 points from real hourly sea-level data (index = local hour 0-23)
   const points: { x: number; y: number }[] = [];
   const validHeights = tideHeights.filter(
     (v) => typeof v === "number" && Number.isFinite(v),
   );
   const hasRealData = validHeights.length >= 4;
-
   if (hasRealData) {
     for (let i = 0; i < Math.min(tideHeights.length, 24); i++) {
       const v = tideHeights[i];
@@ -1305,13 +1573,11 @@ function TideChart({
       });
     }
   } else {
-    // Fallback: generate a plausible sinusoidal curve
     for (let i = 0; i <= 23; i++) {
       const h = 1.5 + 1.2 * Math.sin((2 * Math.PI * i) / 12.42);
       points.push({ x: i / 23, y: h });
     }
   }
-
   const tideYValues = points.map((p) => p.y);
   const tideMax = Math.max(...tideYValues);
   const tideMin = Math.min(...tideYValues);
@@ -1319,31 +1585,22 @@ function TideChart({
   const yPad = yRange * 0.15;
   const yLo = tideMin - yPad;
   const yHi = tideMax + yPad;
-
-  // SVG path using actual y range
   const toSVGY = (v: number) =>
     H - ((v - yLo) / (yHi - yLo)) * (H * 0.8) - H * 0.1;
-
-  // Build smooth sinusoidal path using Catmull-Rom → cubic Bezier conversion
-  // This considers neighboring points to compute tangents, producing a natural
-  // wave-like curve instead of the angular S-curves from simple midpoint Beziers.
   const svgPts = points.map((p) => ({ x: p.x * W, y: toSVGY(p.y) }));
-  const tension = 0.5; // 0 = straight lines, 0.5 = full Catmull-Rom, lower = gentler
+  const tension = 0.5;
   let pathD = `M ${svgPts[0].x} ${svgPts[0].y}`;
   for (let i = 1; i < svgPts.length; i++) {
     const p0 = svgPts[Math.max(i - 2, 0)];
     const p1 = svgPts[i - 1];
     const p2 = svgPts[i];
     const p3 = svgPts[Math.min(i + 1, svgPts.length - 1)];
-    // Catmull-Rom tangents scaled by tension
     const cp1x = p1.x + (p2.x - p0.x) * tension;
     const cp1y = p1.y + (p2.y - p0.y) * tension;
     const cp2x = p2.x - (p3.x - p1.x) * tension;
     const cp2y = p2.y - (p3.y - p1.y) * tension;
     pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
-
-  // Current time position relative to local time at the location
   const nowUtcMs = Date.now();
   const localMs = nowUtcMs + utcOffsetSeconds * 1000;
   const localDate = new Date(localMs);
@@ -1351,13 +1608,9 @@ function TideChart({
   const localMin = localDate.getUTCMinutes();
   const currentHourFrac = (localHour + localMin / 60) / 24;
   const currentX = currentHourFrac * W;
-
-  // Time labels in location local time (every 6 hours)
-  const timeLabels = [0, 6, 12, 18, 24].map((h) => {
-    const displayH = h % 24;
-    return `${String(displayH).padStart(2, "0")}:00`;
-  });
-
+  const timeLabels = [0, 6, 12, 18, 24].map(
+    (h) => `${String(h % 24).padStart(2, "0")}:00`,
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: tideHeights triggers re-animation
   useEffect(() => {
     const el = svgRef.current;
@@ -1374,10 +1627,7 @@ function TideChart({
       });
     });
   }, [tideHeights]);
-
   const gridFracs = [0.25, 0.5, 0.75];
-
-  // Interpolate current tide height from hourly data
   const currentTideRaw = (() => {
     if (!hasRealData || tideHeights.length < 2) return null;
     const h = Math.floor(localHour + localMin / 60);
@@ -1387,7 +1637,6 @@ function TideChart({
     if (typeof v0 !== "number" || typeof v1 !== "number") return null;
     return v0 + (v1 - v0) * frac;
   })();
-
   return (
     <div
       className="w-full overflow-hidden rounded-xl"
@@ -1458,7 +1707,6 @@ function TideChart({
               <stop offset="100%" stopColor="#00b4d8" stopOpacity={0} />
             </linearGradient>
           </defs>
-          {/* Current local-time position marker */}
           <line
             x1={currentX}
             y1={0}
@@ -1470,7 +1718,6 @@ function TideChart({
             opacity={0.9}
           />
           <circle cx={currentX} cy={4} r={4} fill="#FFE033" opacity={0.9} />
-          {/* X-axis time labels (local time) */}
           {timeLabels.map((label, i) => (
             <text
               key={label}
@@ -1484,7 +1731,6 @@ function TideChart({
               {label}
             </text>
           ))}
-          {/* Y-axis scale: actual daily max and min tide heights */}
           {[
             { value: tideMax, y: toSVGY(tideMax) },
             { value: tideMin, y: toSVGY(tideMin) },
@@ -1549,7 +1795,7 @@ function LoadingSkeleton() {
   );
 }
 
-// ─── Spot Header with live local time ────────────────────────────────────────
+// ─── Spot Header ──────────────────────────────────────────────────────────────
 function SpotHeader({ spot }: { spot: Spot }) {
   const localTime = useLocalTime(
     spot.timezone === "auto" ? "UTC" : spot.timezone,
@@ -1586,17 +1832,23 @@ export default function App() {
   const [data, setData] = useState<ConditionsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Units of measure settings
   const [units, setUnitsState] = useState<UnitSettings>(loadUnits);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dragEnabled, setDragEnabledState] = useState<boolean>(() =>
+    loadDragEnabled(),
+  );
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [minTileWarning, setMinTileWarning] = useState(false);
 
+  const setDragEnabled = useCallback((v: boolean) => {
+    setDragEnabledState(v);
+    saveDragEnabled(v);
+  }, []);
   const setUnits = useCallback((next: UnitSettings) => {
     setUnitsState(next);
     saveUnits(next);
   }, []);
 
-  // Tile order state
   const [tileOrder, setTileOrderState] = useState<TileId[]>(() =>
     loadTileOrder(),
   );
@@ -1609,17 +1861,14 @@ export default function App() {
     getHandlers: getTileHandlers,
     activeIndex: activeTileIndex,
     overIndex: overTileIndex,
-  } = useSortable(tileOrder, setTileOrder, conditionGridRef);
+  } = useSortable(tileOrder, setTileOrder, conditionGridRef, dragEnabled);
 
-  // Current location state
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Persist presets to localStorage on every change
   useEffect(() => {
     savePresets(presets);
   }, [presets]);
-
   const setPresets = useCallback((next: PresetSlots) => {
     setPresetsState(next);
   }, []);
@@ -1629,6 +1878,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setData(null);
+    setSelectedDay(null);
     try {
       const result = await fetchConditions(spot);
       setData(result);
@@ -1647,7 +1897,6 @@ export default function App() {
     }
     setLocating(true);
     setLocationError(null);
-
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude: lat, longitude: lon } = position.coords;
@@ -1664,13 +1913,7 @@ export default function App() {
             geoData.name ||
             "My Location";
           const country = geoData.address?.country ?? "";
-          const spot: Spot = {
-            name,
-            country,
-            lat,
-            lng: lon,
-            timezone: "auto",
-          };
+          const spot: Spot = { name, country, lat, lng: lon, timezone: "auto" };
           await loadSpot(spot);
         } catch {
           setLocationError("Couldn't detect your location. Try again.");
@@ -1688,7 +1931,6 @@ export default function App() {
     );
   }, [loadSpot]);
 
-  // Display value helpers (convert from raw metric API values)
   const displayHeight = (m: number) =>
     units.height === "ft" ? metresToFeet(m) : m;
   const heightLabel = units.height === "ft" ? "ft" : "m";
@@ -1703,7 +1945,6 @@ export default function App() {
         : k;
   const speedLabel = units.speed;
 
-  // Compute overall rating
   const overallRating: "good" | "average" | "poor" = data
     ? waveStatus(data.waveHeight) === "good" &&
       windStatus(data.windSpeed) === "good"
@@ -1714,6 +1955,404 @@ export default function App() {
         : "average"
     : "average";
 
+  // Tile picker toggle
+  const toggleTile = useCallback((id: TileId) => {
+    setTileOrderState((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length <= 2) {
+          setMinTileWarning(true);
+          setTimeout(() => setMinTileWarning(false), 2500);
+          return prev;
+        }
+        const next = prev.filter((t) => t !== id);
+        saveTileOrder(next);
+        return next;
+      }
+      const next = [...prev, id];
+      saveTileOrder(next);
+      return next;
+    });
+  }, []);
+
+  // Selected day helpers
+  const getDayIndex = (dateStr: string | null): number => {
+    if (!dateStr || !data) return 0;
+    const idx = data.dailyDates.indexOf(dateStr);
+    return idx >= 0 ? idx : 0;
+  };
+
+  // Get the "effective" values for condition tiles (live or selected day)
+  const getEffectiveValues = () => {
+    if (!data) return null;
+    if (!selectedDay)
+      return {
+        waveHeight: data.waveHeight,
+        windSpeed: data.windSpeed,
+        windDirection: data.windDirection,
+        swellPeriod: data.swellPeriod,
+        isLive: true,
+      };
+    const di = getDayIndex(selectedDay);
+    return {
+      waveHeight: data.dailyWaveMax[di] ?? data.waveHeight,
+      windSpeed: data.dailyWindSpeed[di] ?? data.windSpeed,
+      windDirection: data.dailyWaveDir[di] ?? data.windDirection,
+      swellPeriod: data.dailySwellPeriod[di] ?? data.swellPeriod,
+      isLive: false,
+    };
+  };
+  const effective = getEffectiveValues();
+
+  const sectionTitle = selectedDay
+    ? `${fullDayName(selectedDay)}'S CONDITIONS`
+    : "TODAY'S CONDITIONS";
+
+  // Render a single condition tile
+  const renderTile = (tileId: TileId) => {
+    if (!data || !effective) return null;
+    const isSelectedDayMode = !!selectedDay;
+    switch (tileId) {
+      case "wave":
+        return (
+          <StatCard
+            label="Wave Height"
+            value={displayHeight(effective.waveHeight)}
+            unit={heightLabel}
+            status={waveStatus(effective.waveHeight)}
+            icon={<Waves size={14} />}
+            decimals={1}
+          />
+        );
+      case "wind":
+        return (
+          <StatCard
+            label="Wind Speed"
+            value={displaySpeed(effective.windSpeed)}
+            unit={speedLabel}
+            status={windStatus(effective.windSpeed)}
+            icon={<Wind size={14} />}
+            decimals={1}
+          />
+        );
+      case "direction":
+        return <CompassCard degrees={effective.windDirection} />;
+      case "waterTemp":
+        return (
+          <StatCard
+            label={isSelectedDayMode ? "Water Temp (now)" : "Water Temp"}
+            value={displayTemp(data.waterTemp)}
+            unit={tempLabel}
+            status={tempStatus(data.waterTemp)}
+            icon={<Thermometer size={14} />}
+            decimals={0}
+          />
+        );
+      case "airTemp":
+        return (
+          <StatCard
+            label={isSelectedDayMode ? "Air Temp (now)" : "Air Temp"}
+            value={displayTemp(data.airTemp)}
+            unit={tempLabel}
+            status={tempStatus(data.airTemp)}
+            icon={<Thermometer size={14} />}
+            decimals={0}
+          />
+        );
+      case "period":
+        return (
+          <StatCard
+            label="WAVE PERIOD"
+            value={effective.swellPeriod}
+            unit="s"
+            status="good"
+            icon={<Waves size={14} />}
+            decimals={0}
+            yellowValue
+          />
+        );
+      case "tide":
+        if (isSelectedDayMode) {
+          return (
+            <div
+              className="w-full overflow-hidden rounded-xl flex items-center justify-center"
+              style={{
+                border: "1px solid rgba(13,79,110,0.5)",
+                background: "rgba(2,13,24,0.8)",
+                minHeight: 120,
+              }}
+            >
+              <p
+                className="font-body text-sm text-center px-6 py-8"
+                style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+              >
+                Tide chart is only available for today
+              </p>
+            </div>
+          );
+        }
+        return (
+          <TideChart
+            tideHeights={data.tideHeights}
+            utcOffsetSeconds={data.utcOffsetSeconds}
+            displayHeight={displayHeight}
+            heightLabel={heightLabel}
+          />
+        );
+      case "forecast":
+        return (
+          <div
+            className="w-full overflow-hidden rounded-xl"
+            style={{
+              border: "1px solid rgba(13,79,110,0.5)",
+              background: "rgba(2,13,24,0.8)",
+            }}
+          >
+            <div className="px-6 pt-5 pb-2">
+              <h3
+                className="font-body text-xs tracking-widest uppercase font-semibold"
+                style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+              >
+                7-Day Forecast
+              </h3>
+            </div>
+            <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: "repeat(7, minmax(90px, 1fr))",
+                  minWidth: "min-content",
+                }}
+              >
+                {(() => {
+                  const nowLocalMs =
+                    Date.now() + (data.utcOffsetSeconds ?? 0) * 1000;
+                  const nowLocal = new Date(nowLocalMs);
+                  const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+                  const todayIdx = Math.max(
+                    0,
+                    data.dailyDates.findIndex((d) => d === todayStr),
+                  );
+                  return data.dailyDates
+                    .slice(todayIdx, todayIdx + 7)
+                    .map((date, j) => {
+                      const i = todayIdx + j;
+                      const isToday = date === todayStr;
+                      return (
+                        <ForecastCard
+                          key={date}
+                          date={date}
+                          waveMax={data.dailyWaveMax[i] ?? 1}
+                          waveDir={data.dailyWaveDir[i] ?? 270}
+                          windSpeed={data.dailyWindSpeed[i] ?? 15}
+                          swellPeriod={data.dailySwellPeriod[i] ?? 0}
+                          index={j}
+                          displayHeight={displayHeight}
+                          heightLabel={heightLabel}
+                          displaySpeed={displaySpeed}
+                          speedLabel={speedLabel}
+                          isSelected={
+                            isToday ? !selectedDay : selectedDay === date
+                          }
+                          onClick={() => {
+                            if (isToday) {
+                              setSelectedDay(null);
+                            } else {
+                              setSelectedDay(date);
+                            }
+                          }}
+                        />
+                      );
+                    });
+                })()}
+              </div>
+            </div>
+          </div>
+        );
+      // New tiles
+      case "windGust":
+        return data.windGust !== undefined ? (
+          <StatCard
+            label="Wind Gusts"
+            value={displaySpeed(data.windGust)}
+            unit={speedLabel}
+            status={windStatus(data.windGust)}
+            icon={<Zap size={14} />}
+            decimals={1}
+          />
+        ) : null;
+      case "windSpeed80m":
+        return data.windSpeed80m !== undefined ? (
+          <StatCard
+            label="Wind at 80m"
+            value={displaySpeed(data.windSpeed80m)}
+            unit={speedLabel}
+            status={windStatus(data.windSpeed80m)}
+            icon={<Wind size={14} />}
+            decimals={1}
+          />
+        ) : null;
+      case "pressure":
+        return data.pressure !== undefined ? (
+          <StatCard
+            label="Pressure"
+            value={data.pressure}
+            unit="hPa"
+            status="average"
+            icon={<Gauge size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "visibility":
+        return data.visibility !== undefined ? (
+          <StatCard
+            label="Visibility"
+            value={data.visibility / 1000}
+            unit="km"
+            status="good"
+            icon={<Eye size={14} />}
+            decimals={1}
+          />
+        ) : null;
+      case "humidity":
+        return data.humidity !== undefined ? (
+          <StatCard
+            label="Humidity"
+            value={data.humidity}
+            unit="%"
+            status="average"
+            icon={<Droplets size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "dewPoint":
+        return data.dewPoint !== undefined ? (
+          <StatCard
+            label="Dew Point"
+            value={displayTemp(data.dewPoint)}
+            unit={tempLabel}
+            status={tempStatus(data.dewPoint)}
+            icon={<Droplets size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "uvIndex":
+        return data.uvIndex !== undefined ? (
+          <StatCard
+            label="UV Index"
+            value={data.uvIndex}
+            unit=""
+            status={
+              data.uvIndex > 7 ? "poor" : data.uvIndex > 3 ? "average" : "good"
+            }
+            icon={<Sun size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "cloudCover":
+        return data.cloudCover !== undefined ? (
+          <StatCard
+            label="Cloud Cover"
+            value={data.cloudCover}
+            unit="%"
+            status="average"
+            icon={<Cloud size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "precipitation":
+        return data.precipitation !== undefined ? (
+          <StatCard
+            label="Rain Chance"
+            value={data.precipitation}
+            unit="%"
+            status={
+              data.precipitation > 70
+                ? "poor"
+                : data.precipitation > 30
+                  ? "average"
+                  : "good"
+            }
+            icon={<Droplets size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "swellHeight":
+        return data.swellHeight !== undefined ? (
+          <StatCard
+            label="Swell Height"
+            value={displayHeight(data.swellHeight)}
+            unit={heightLabel}
+            status={waveStatus(data.swellHeight)}
+            icon={<Waves size={14} />}
+            decimals={1}
+          />
+        ) : null;
+      case "swellPeriod2":
+        return data.swellPeriod2 !== undefined ? (
+          <StatCard
+            label="Swell Period"
+            value={data.swellPeriod2}
+            unit="s"
+            status="good"
+            icon={<Waves size={14} />}
+            decimals={0}
+            yellowValue
+          />
+        ) : null;
+      case "windWaveHeight":
+        return data.windWaveHeight !== undefined ? (
+          <StatCard
+            label="Wind Wave Ht"
+            value={displayHeight(data.windWaveHeight)}
+            unit={heightLabel}
+            status={waveStatus(data.windWaveHeight)}
+            icon={<Waves size={14} />}
+            decimals={1}
+          />
+        ) : null;
+      case "windWavePeriod":
+        return data.windWavePeriod !== undefined ? (
+          <StatCard
+            label="Wind Wave Per"
+            value={data.windWavePeriod}
+            unit="s"
+            status="average"
+            icon={<Waves size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "seaTemp":
+        return data.seaTemp !== undefined ? (
+          <StatCard
+            label="Sea Temp"
+            value={displayTemp(data.seaTemp)}
+            unit={tempLabel}
+            status={tempStatus(data.seaTemp)}
+            icon={<Thermometer size={14} />}
+            decimals={0}
+          />
+        ) : null;
+      case "sunrise":
+        return data.sunrise ? (
+          <TimeCard
+            label="Sunrise"
+            value={data.sunrise}
+            icon={<Sunrise size={14} />}
+          />
+        ) : null;
+      case "sunset":
+        return data.sunset ? (
+          <TimeCard
+            label="Sunset"
+            value={data.sunset}
+            icon={<Sunset size={14} />}
+          />
+        ) : null;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div
       className="relative min-h-screen"
@@ -1722,14 +2361,11 @@ export default function App() {
         fontFamily: "'General Sans', sans-serif",
       }}
     >
-      {/* DYNAMIC WAVE BACKGROUND — full screen, fixed, behind everything */}
       <HeroWaveCanvas
         waveHeight={data?.waveHeight ?? 1.2}
         windSpeed={data?.windSpeed ?? 10}
         rating={overallRating}
       />
-
-      {/* PAGE CONTENT — above wave layer */}
       <div className="relative" style={{ zIndex: 1 }}>
         {/* HEADER */}
         <header className="px-6 md:px-12 pt-8 pb-2">
@@ -1742,7 +2378,7 @@ export default function App() {
               aria-label="Refresh app"
             >
               <img
-                src="/assets/generated/swell-icon-wave-transparent.dim_512x512.png"
+                src="/assets/generated/swell-icon-wave.dim_512x512.png"
                 alt=""
                 className="w-10 h-10 object-contain"
                 aria-hidden="true"
@@ -1779,7 +2415,7 @@ export default function App() {
         <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
           <SheetContent
             side="right"
-            className="w-80 border-0 p-0"
+            className="w-80 border-0 p-0 flex flex-col"
             style={{
               background:
                 "linear-gradient(170deg, rgba(13,30,52,0.98) 0%, rgba(2,13,24,0.99) 100%)",
@@ -1788,7 +2424,7 @@ export default function App() {
             data-ocid="settings.sheet"
           >
             <SheetHeader
-              className="px-6 pt-6 pb-4"
+              className="px-6 pt-6 pb-4 flex-shrink-0"
               style={{ borderBottom: "1px solid rgba(13,79,110,0.3)" }}
             >
               <SheetTitle className="font-display font-bold text-white flex items-center gap-2">
@@ -1796,11 +2432,47 @@ export default function App() {
                   size={16}
                   style={{ color: "var(--color-electric)" }}
                 />
-                Units & Display
+                Settings
               </SheetTitle>
             </SheetHeader>
 
-            <div className="px-6 py-6 space-y-8 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+              {/* Drag to Reorder toggle */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Drag to Reorder
+                </p>
+                <div
+                  className="flex items-center justify-between rounded-xl px-4 py-3"
+                  style={{
+                    background: "rgba(13,79,110,0.2)",
+                    border: "1px solid rgba(13,79,110,0.4)",
+                  }}
+                >
+                  <div>
+                    <p className="font-body text-sm text-white font-medium">
+                      Enable drag reordering
+                    </p>
+                    <p
+                      className="font-body text-xs mt-0.5"
+                      style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                    >
+                      Applies to tiles and saved spots
+                    </p>
+                  </div>
+                  <Switch
+                    checked={dragEnabled}
+                    onCheckedChange={setDragEnabled}
+                    aria-label="Toggle drag to reorder"
+                  />
+                </div>
+              </div>
+
+              <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
+
               {/* Saved Spots */}
               <div className="space-y-3">
                 <p
@@ -1809,7 +2481,6 @@ export default function App() {
                 >
                   Your Saved Spots
                 </p>
-                {/* Use my location — top of list */}
                 <button
                   type="button"
                   onClick={handleUseMyLocation}
@@ -1824,7 +2495,7 @@ export default function App() {
                     border: "1px solid rgba(0,180,216,0.45)",
                     color: "var(--color-electric)",
                   }}
-                  aria-label="Use my current location to detect nearest surf conditions"
+                  aria-label="Use my current location"
                 >
                   <span
                     className="flex-shrink-0"
@@ -1865,6 +2536,7 @@ export default function App() {
                   presets={presets}
                   setPresets={setPresets}
                   selectedSpot={selectedSpot}
+                  dragEnabled={dragEnabled}
                   loadSpot={(spot) => {
                     loadSpot(spot);
                     setSettingsOpen(false);
@@ -1903,8 +2575,6 @@ export default function App() {
                               opacity: 0.7,
                             }
                       }
-                      data-ocid={`settings.height_${opt}_toggle`}
-                      aria-pressed={units.height === opt}
                     >
                       {opt === "ft" ? "Feet" : "Meters"}
                     </button>
@@ -1941,8 +2611,6 @@ export default function App() {
                               opacity: 0.7,
                             }
                       }
-                      data-ocid={`settings.temp_${opt}_toggle`}
-                      aria-pressed={units.temp === opt}
                     >
                       {opt === "F" ? "°F" : "°C"}
                     </button>
@@ -1979,12 +2647,100 @@ export default function App() {
                               opacity: 0.7,
                             }
                       }
-                      data-ocid={`settings.speed_${opt.replace("/", "_")}_toggle`}
-                      aria-pressed={units.speed === opt}
                     >
                       {opt === "kts" ? "Knots" : opt === "mph" ? "MPH" : "KM/H"}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
+
+              {/* Available Tiles */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Available Tiles
+                </p>
+                {minTileWarning && (
+                  <div
+                    className="rounded-xl px-4 py-2 text-xs font-body font-semibold"
+                    style={{
+                      background: "rgba(255,107,71,0.12)",
+                      border: "1px solid rgba(255,107,71,0.4)",
+                      color: "var(--color-coral)",
+                    }}
+                  >
+                    Minimum 2 tiles must remain active.
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {ALL_TILE_IDS.map((id) => {
+                    const isActive = tileOrder.includes(id);
+                    const catalog = TILE_CATALOG[id];
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                        style={{
+                          background: "rgba(13,79,110,0.15)",
+                          border: "1px solid rgba(13,79,110,0.3)",
+                        }}
+                      >
+                        <span className="flex-1 font-body text-sm text-white truncate">
+                          {catalog.label}
+                        </span>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:scale-110"
+                              style={{
+                                background: "rgba(0,180,216,0.12)",
+                                border: "1px solid rgba(0,180,216,0.3)",
+                                color: "var(--color-electric)",
+                              }}
+                              aria-label={`Info about ${catalog.label}`}
+                            >
+                              <Info size={11} />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            side="left"
+                            className="w-64 border-0 p-0 rounded-xl"
+                            style={{
+                              background:
+                                "linear-gradient(145deg, rgba(13,30,52,0.98), rgba(2,13,24,0.99))",
+                              border: "1px solid rgba(13,79,110,0.6)",
+                              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                            }}
+                          >
+                            <div className="px-4 py-3">
+                              <p
+                                className="font-body font-bold text-sm mb-1"
+                                style={{ color: "var(--color-electric)" }}
+                              >
+                                {catalog.label}
+                              </p>
+                              <p
+                                className="font-body text-xs leading-relaxed"
+                                style={{ color: "rgba(168,216,200,0.85)" }}
+                              >
+                                {catalog.description}
+                              </p>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <Switch
+                          checked={isActive}
+                          onCheckedChange={() => toggleTile(id)}
+                          aria-label={`Toggle ${catalog.label} tile`}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -2016,9 +2772,7 @@ export default function App() {
           <main className="px-6 md:px-12 pb-16" data-ocid="dashboard.section">
             <div className="max-w-7xl mx-auto space-y-6">
               <SpotHeader spot={selectedSpot} />
-
               {loading && <LoadingSkeleton />}
-
               {error && (
                 <div
                   className="rounded-xl p-6 text-center"
@@ -2036,17 +2790,33 @@ export default function App() {
                   </p>
                 </div>
               )}
-
               {data && !loading && (
                 <>
-                  {/* TODAY'S CONDITIONS */}
+                  {/* TODAY'S / SELECTED DAY CONDITIONS */}
                   <section data-ocid="conditions.section">
-                    <h3
-                      className="font-body text-xs tracking-widest uppercase font-semibold mb-4"
-                      style={{ color: "var(--color-seafoam)", opacity: 0.7 }}
-                    >
-                      Today's Conditions
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3
+                        className="font-body text-xs tracking-widest uppercase font-semibold"
+                        style={{ color: "var(--color-seafoam)", opacity: 0.7 }}
+                      >
+                        {sectionTitle}
+                      </h3>
+                      {selectedDay && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDay(null)}
+                          className="flex items-center gap-1 rounded-full px-3 py-1.5 font-body text-xs font-semibold transition-all hover:scale-105"
+                          style={{
+                            background: "rgba(0,180,216,0.12)",
+                            border: "1px solid rgba(0,180,216,0.4)",
+                            color: "var(--color-electric)",
+                          }}
+                        >
+                          <ArrowLeft size={11} />
+                          Today
+                        </button>
+                      )}
+                    </div>
                     <div
                       ref={conditionGridRef}
                       className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
@@ -2054,160 +2824,19 @@ export default function App() {
                       {tileOrder.map((tileId, idx) => {
                         const isWide =
                           tileId === "tide" || tileId === "forecast";
-                        const tileContent = (() => {
-                          switch (tileId) {
-                            case "wave":
-                              return (
-                                <StatCard
-                                  label="Wave Height"
-                                  value={displayHeight(data.waveHeight)}
-                                  unit={heightLabel}
-                                  status={waveStatus(data.waveHeight)}
-                                  icon={<Waves size={14} />}
-                                  decimals={1}
-                                />
-                              );
-                            case "wind":
-                              return (
-                                <StatCard
-                                  label="Wind Speed"
-                                  value={displaySpeed(data.windSpeed)}
-                                  unit={speedLabel}
-                                  status={windStatus(data.windSpeed)}
-                                  icon={<Wind size={14} />}
-                                  decimals={1}
-                                />
-                              );
-                            case "direction":
-                              return (
-                                <CompassCard degrees={data.windDirection} />
-                              );
-                            case "waterTemp":
-                              return (
-                                <StatCard
-                                  label="Water Temp"
-                                  value={displayTemp(data.waterTemp)}
-                                  unit={tempLabel}
-                                  status={tempStatus(data.waterTemp)}
-                                  icon={<Thermometer size={14} />}
-                                  decimals={0}
-                                />
-                              );
-                            case "airTemp":
-                              return (
-                                <StatCard
-                                  label="Air Temp"
-                                  value={displayTemp(data.airTemp)}
-                                  unit={tempLabel}
-                                  status={tempStatus(data.airTemp)}
-                                  icon={<Thermometer size={14} />}
-                                  decimals={0}
-                                />
-                              );
-                            case "period":
-                              return (
-                                <StatCard
-                                  label="WAVE PERIOD"
-                                  value={data.swellPeriod}
-                                  unit="s"
-                                  status="good"
-                                  icon={<Waves size={14} />}
-                                  decimals={0}
-                                />
-                              );
-                            case "tide":
-                              return (
-                                <TideChart
-                                  tideHeights={data?.tideHeights ?? []}
-                                  utcOffsetSeconds={data?.utcOffsetSeconds ?? 0}
-                                  displayHeight={displayHeight}
-                                  heightLabel={heightLabel}
-                                />
-                              );
-                            case "forecast":
-                              return (
-                                <div
-                                  className="w-full overflow-hidden rounded-xl"
-                                  style={{
-                                    border: "1px solid rgba(13,79,110,0.5)",
-                                    background: "rgba(2,13,24,0.8)",
-                                  }}
-                                >
-                                  <div className="px-6 pt-5 pb-2">
-                                    <h3
-                                      className="font-body text-xs tracking-widest uppercase font-semibold"
-                                      style={{
-                                        color: "var(--color-seafoam)",
-                                        opacity: 0.8,
-                                      }}
-                                    >
-                                      7-Day Forecast
-                                    </h3>
-                                  </div>
-                                  <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
-                                    <div
-                                      className="grid gap-2"
-                                      style={{
-                                        gridTemplateColumns:
-                                          "repeat(7, minmax(90px, 1fr))",
-                                        minWidth: "min-content",
-                                      }}
-                                    >
-                                      {(() => {
-                                        const nowLocalMs =
-                                          Date.now() +
-                                          (data.utcOffsetSeconds ?? 0) * 1000;
-                                        const nowLocal = new Date(nowLocalMs);
-                                        const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
-                                        const todayIdx = Math.max(
-                                          0,
-                                          data.dailyDates.findIndex(
-                                            (d) => d === todayStr,
-                                          ),
-                                        );
-                                        return data.dailyDates
-                                          .slice(todayIdx, todayIdx + 7)
-                                          .map((date, j) => {
-                                            const i = todayIdx + j;
-                                            return (
-                                              <ForecastCard
-                                                key={date}
-                                                date={date}
-                                                waveMax={
-                                                  data.dailyWaveMax[i] ?? 1
-                                                }
-                                                waveDir={
-                                                  data.dailyWaveDir[i] ?? 270
-                                                }
-                                                windSpeed={
-                                                  data.dailyWindSpeed[i] ?? 15
-                                                }
-                                                swellPeriod={
-                                                  data.dailySwellPeriod[i] ?? 0
-                                                }
-                                                index={j}
-                                                displayHeight={displayHeight}
-                                                heightLabel={heightLabel}
-                                                displaySpeed={displaySpeed}
-                                                speedLabel={speedLabel}
-                                              />
-                                            );
-                                          });
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                          }
-                        })();
+                        const tileContent = renderTile(tileId);
+                        if (!tileContent) return null;
                         return (
                           <div
                             key={tileId}
                             {...getTileHandlers(idx)}
                             className={isWide ? "col-span-2 md:col-span-5" : ""}
                             style={{
-                              cursor:
-                                activeTileIndex === idx ? "grabbing" : "grab",
+                              cursor: dragEnabled
+                                ? activeTileIndex === idx
+                                  ? "grabbing"
+                                  : "grab"
+                                : "default",
                               opacity: activeTileIndex === idx ? 0.5 : 1,
                               outline:
                                 overTileIndex === idx && activeTileIndex !== idx
@@ -2217,7 +2846,7 @@ export default function App() {
                               borderRadius: "12px",
                               transition:
                                 "opacity 0.15s ease, outline 0.15s ease",
-                              touchAction: "none",
+                              touchAction: dragEnabled ? "none" : "auto",
                             }}
                             data-ocid={`conditions.item.${idx + 1}`}
                           >
@@ -2226,18 +2855,52 @@ export default function App() {
                         );
                       })}
                     </div>
-                    <p
-                      className="text-xs mt-2 text-center"
-                      style={{ color: "rgba(168,216,200,0.35)" }}
-                    >
-                      Drag tiles to reorder
-                    </p>
+                    {dragEnabled && (
+                      <p
+                        className="text-xs mt-2 text-center"
+                        style={{ color: "rgba(168,216,200,0.35)" }}
+                      >
+                        Drag tiles to reorder
+                      </p>
+                    )}
                   </section>
                 </>
               )}
             </div>
           </main>
         )}
+
+        {/* SEARCH BAR */}
+        <div
+          className="px-6 md:px-12 pb-6"
+          style={{
+            position: selectedSpot ? "relative" : "absolute",
+            bottom: selectedSpot ? undefined : "2rem",
+            left: selectedSpot ? undefined : 0,
+            right: selectedSpot ? undefined : 0,
+          }}
+        >
+          <div className="max-w-7xl mx-auto">
+            <div
+              className="flex items-center gap-3 rounded-2xl px-4 py-3"
+              style={{
+                background: "rgba(13,30,52,0.85)",
+                border: "1px solid rgba(13,79,110,0.6)",
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              <Search
+                size={16}
+                style={{
+                  color: "var(--color-electric)",
+                  opacity: 0.6,
+                  flexShrink: 0,
+                }}
+              />
+              <SearchInput onSelect={loadSpot} />
+            </div>
+          </div>
+        </div>
 
         {/* FOOTER */}
         <footer
@@ -2257,17 +2920,124 @@ export default function App() {
             >
               © {new Date().getFullYear()}. Built with ❤ using{" "}
               <a
-                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "var(--color-electric)", opacity: 0.7 }}
+                href="https://caffeine.ai"
+                className="underline hover:opacity-80"
+                style={{ color: "var(--color-electric)" }}
               >
-                caffeine.ai
+                Caffeine
               </a>
             </p>
           </div>
         </footer>
       </div>
+    </div>
+  );
+}
+
+// ─── SearchInput ──────────────────────────────────────────────────────────────
+function SearchInput({ onSelect }: { onSelect: (spot: Spot) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<GeoResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!query.trim()) {
+      setResults([]);
+      setSearching(false);
+      setOpen(false);
+      return;
+    }
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const found = await searchSpots(query);
+        setResults(found);
+        setOpen(found.length > 0);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query]);
+
+  return (
+    <div className="relative flex-1">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search any surf or sailing spot worldwide…"
+        className="w-full bg-transparent outline-none font-body text-sm text-white placeholder:opacity-40"
+        aria-label="Search for a surf spot"
+      />
+      {searching && (
+        <div
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-t-transparent animate-spin"
+          style={{
+            borderColor: "var(--color-electric)",
+            borderTopColor: "transparent",
+          }}
+        />
+      )}
+      {open && results.length > 0 && (
+        <div
+          className="absolute bottom-full left-0 right-0 mb-2 rounded-xl overflow-hidden"
+          style={{
+            background:
+              "linear-gradient(145deg, rgba(13,30,52,0.98), rgba(2,13,24,0.99))",
+            border: "1px solid rgba(13,79,110,0.6)",
+            boxShadow: "0 -8px 32px rgba(0,0,0,0.5)",
+            zIndex: 50,
+          }}
+        >
+          {results.slice(0, 6).map((result, i) => (
+            <button
+              type="button"
+              key={`${result.name}-${result.latitude}-${result.longitude}`}
+              onClick={() => {
+                onSelect(geoToSpot(result));
+                setQuery("");
+                setOpen(false);
+              }}
+              className="w-full text-left flex items-center gap-3 px-4 py-3 transition-all duration-150"
+              style={{
+                borderTop: i > 0 ? "1px solid rgba(13,79,110,0.3)" : "none",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "rgba(13,79,110,0.3)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "";
+              }}
+            >
+              <Waves
+                size={12}
+                style={{ color: "var(--color-electric)", flexShrink: 0 }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-body font-semibold text-white text-sm truncate">
+                  {result.name}
+                </div>
+                <div
+                  className="font-body text-xs truncate"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.65 }}
+                >
+                  {result.admin1 ? `${result.admin1}, ` : ""}
+                  {result.country}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

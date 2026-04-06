@@ -1323,18 +1323,24 @@ function TideChart({
   // SVG path using actual y range
   const toSVGY = (v: number) =>
     H - ((v - yLo) / (yHi - yLo)) * (H * 0.8) - H * 0.1;
-  let pathD = "";
-  for (let i = 0; i < points.length; i++) {
-    const sx = points[i].x * W;
-    const sy = toSVGY(points[i].y);
-    if (i === 0) {
-      pathD += `M ${sx} ${sy}`;
-    } else {
-      const prevSx = points[i - 1].x * W;
-      const prevSy = toSVGY(points[i - 1].y);
-      const cpx = (prevSx + sx) / 2;
-      pathD += ` C ${cpx} ${prevSy}, ${cpx} ${sy}, ${sx} ${sy}`;
-    }
+
+  // Build smooth sinusoidal path using Catmull-Rom → cubic Bezier conversion
+  // This considers neighboring points to compute tangents, producing a natural
+  // wave-like curve instead of the angular S-curves from simple midpoint Beziers.
+  const svgPts = points.map((p) => ({ x: p.x * W, y: toSVGY(p.y) }));
+  const tension = 0.4; // 0 = straight lines, 0.5 = full Catmull-Rom, lower = gentler
+  let pathD = `M ${svgPts[0].x} ${svgPts[0].y}`;
+  for (let i = 1; i < svgPts.length; i++) {
+    const p0 = svgPts[Math.max(i - 2, 0)];
+    const p1 = svgPts[i - 1];
+    const p2 = svgPts[i];
+    const p3 = svgPts[Math.min(i + 1, svgPts.length - 1)];
+    // Catmull-Rom tangents scaled by tension
+    const cp1x = p1.x + (p2.x - p0.x) * tension;
+    const cp1y = p1.y + (p2.y - p0.y) * tension;
+    const cp2x = p2.x - (p3.x - p1.x) * tension;
+    const cp2y = p2.y - (p3.y - p1.y) * tension;
+    pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
   }
 
   // Current time position relative to local time at the location

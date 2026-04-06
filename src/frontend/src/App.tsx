@@ -1744,7 +1744,7 @@ export default function App() {
               <img
                 src="/assets/generated/swell-icon-wave-transparent.dim_512x512.png"
                 alt=""
-                className="w-8 h-8 object-contain"
+                className="w-10 h-10 object-contain"
                 aria-hidden="true"
               />
               SWELL

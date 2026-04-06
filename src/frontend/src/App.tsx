@@ -1703,10 +1703,16 @@ export default function App() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="font-display font-black tracking-[0.15em] text-2xl cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-2 font-display font-black tracking-[0.15em] text-2xl cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-opacity"
               style={{ color: "var(--color-electric)" }}
               aria-label="Refresh app"
             >
+              <img
+                src="/swell-icon.png"
+                alt=""
+                className="w-8 h-8 rounded-md object-cover"
+                aria-hidden="true"
+              />
               SWELL
             </button>
             <div className="flex items-center gap-4">

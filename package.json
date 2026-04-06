@@ -13,6 +13,6 @@
     "fix": "pnpm -r --if-present run fix"
   },
   "devDependencies": {
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.4"
   }
 }

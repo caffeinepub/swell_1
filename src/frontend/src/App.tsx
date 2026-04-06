@@ -2073,7 +2073,7 @@ export default function App() {
                             case "period":
                               return (
                                 <StatCard
-                                  label="PERIOD"
+                                  label="WAVE PERIOD"
                                   value={data.swellPeriod}
                                   unit="s"
                                   status="good"

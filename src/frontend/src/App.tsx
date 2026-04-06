@@ -1742,9 +1742,9 @@ export default function App() {
               aria-label="Refresh app"
             >
               <img
-                src="/assets/generated/swell-icon-wave.dim_512x512.png"
+                src="/assets/generated/swell-icon-wave-transparent.dim_512x512.png"
                 alt=""
-                className="w-8 h-8 rounded-md object-cover"
+                className="w-8 h-8 object-contain"
                 aria-hidden="true"
               />
               SWELL

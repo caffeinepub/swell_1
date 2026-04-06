@@ -1141,13 +1141,13 @@ function CompassCard({ degrees }: { degrees: number }) {
       />
       <div className="flex items-center gap-2">
         <span style={{ color: "var(--color-electric)" }} className="opacity-70">
-          <Compass size={14} />
+          <Wind size={14} />
         </span>
         <span
           className="text-xs font-body tracking-widest uppercase"
           style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
         >
-          DIRECTION
+          WIND DIRECTION
         </span>
       </div>
       <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
@@ -1708,7 +1708,7 @@ export default function App() {
               aria-label="Refresh app"
             >
               <img
-                src="/swell-icon.png"
+                src="/assets/generated/swell-icon-wave.dim_512x512.png"
                 alt=""
                 className="w-8 h-8 rounded-md object-cover"
                 aria-hidden="true"

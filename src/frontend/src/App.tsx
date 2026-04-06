@@ -1328,7 +1328,7 @@ function TideChart({
   // This considers neighboring points to compute tangents, producing a natural
   // wave-like curve instead of the angular S-curves from simple midpoint Beziers.
   const svgPts = points.map((p) => ({ x: p.x * W, y: toSVGY(p.y) }));
-  const tension = 0.4; // 0 = straight lines, 0.5 = full Catmull-Rom, lower = gentler
+  const tension = 0.6; // 0 = straight lines, 0.5 = full Catmull-Rom, lower = gentler
   let pathD = `M ${svgPts[0].x} ${svgPts[0].y}`;
   for (let i = 1; i < svgPts.length; i++) {
     const p0 = svgPts[Math.max(i - 2, 0)];

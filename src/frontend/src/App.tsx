@@ -1377,6 +1377,17 @@ function TideChart({
 
   const gridFracs = [0.25, 0.5, 0.75];
 
+  // Interpolate current tide height from hourly data
+  const currentTideRaw = (() => {
+    if (!hasRealData || tideHeights.length < 2) return null;
+    const h = Math.floor(localHour + localMin / 60);
+    const frac = localMin / 60;
+    const v0 = tideHeights[Math.min(h, tideHeights.length - 1)];
+    const v1 = tideHeights[Math.min(h + 1, tideHeights.length - 1)];
+    if (typeof v0 !== "number" || typeof v1 !== "number") return null;
+    return v0 + (v1 - v0) * frac;
+  })();
+
   return (
     <div
       className="w-full overflow-hidden rounded-xl"
@@ -1385,13 +1396,30 @@ function TideChart({
         background: "rgba(2,13,24,0.8)",
       }}
     >
-      <div className="px-6 pt-5 pb-2">
+      <div className="px-6 pt-5 pb-2 flex items-center justify-between">
         <h3
           className="font-body text-xs tracking-widest uppercase font-semibold"
           style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
         >
           Tide Chart — Today
         </h3>
+        {currentTideRaw !== null && (
+          <div className="flex items-baseline gap-1">
+            <span
+              className="font-body text-xs tracking-widest uppercase font-semibold"
+              style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+            >
+              Current Height:
+            </span>
+            <span
+              className="font-body text-sm font-extrabold tracking-wide"
+              style={{ color: "#FFE033" }}
+            >
+              {displayHeight(currentTideRaw).toFixed(1)}
+              {heightLabel}
+            </span>
+          </div>
+        )}
       </div>
       <div className="px-4 pb-4">
         <svg

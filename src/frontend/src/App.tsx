@@ -554,11 +554,11 @@ function metersToKm(m: number): number {
 function loadPresets(): PresetSlots {
   try {
     const raw = localStorage.getItem(PRESETS_KEY);
-    if (!raw) return Array(5).fill(null);
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return Array(5).fill(null);
-    const slots: PresetSlots = Array(5).fill(null);
-    for (let i = 0; i < 5; i++) {
+    if (!Array.isArray(parsed)) return [];
+    const slots: PresetSlots = [];
+    for (let i = 0; i < parsed.length; i++) {
       const s = parsed[i];
       if (
         s &&
@@ -568,12 +568,14 @@ function loadPresets(): PresetSlots {
         typeof s.lng === "number" &&
         typeof s.timezone === "string"
       ) {
-        slots[i] = s as Spot;
+        slots.push(s as Spot);
+      } else {
+        slots.push(null);
       }
     }
     return slots;
   } catch {
-    return Array(5).fill(null);
+    return [];
   }
 }
 
@@ -3243,11 +3245,14 @@ export default function App() {
               <SearchInput
                 onSelect={loadSpot}
                 onSaveToPreset={(spot) => {
-                  const emptyIdx = presets.findIndex((p) => p === null);
-                  if (emptyIdx !== -1) {
-                    const next = [...presets];
-                    next[emptyIdx] = spot;
+                  const alreadySaved = presets.some(
+                    (p) =>
+                      p !== null && p.lat === spot.lat && p.lng === spot.lng,
+                  );
+                  if (!alreadySaved) {
+                    const next = [spot, ...presets];
                     setPresetsState(next);
+                    savePresets(next);
                   }
                 }}
               />

@@ -1803,7 +1803,7 @@ const TideChart = memo(function TideChart({
           <div className="flex items-baseline gap-1">
             <span
               className="font-body text-xs tracking-widest uppercase font-semibold"
-              style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+              style={{ color: "#FFE033", opacity: 0.8 }}
             >
               Current Height:
             </span>
@@ -1883,17 +1883,8 @@ const TideChart = memo(function TideChart({
             { value: tideMin, y: toSVGY(tideMin), prefix: "Lo" },
           ].map(({ value, y, prefix }) => {
             const label = `${prefix}: ${displayHeight(value).toFixed(1)}${heightLabel}`;
-            const labelW = label.length * 11;
             return (
               <g key={`${prefix}-${value}`}>
-                <rect
-                  x={W - labelW - 10}
-                  y={y - 13}
-                  width={labelW + 8}
-                  height={22}
-                  rx={4}
-                  fill="rgba(2,13,24,0.72)"
-                />
                 <text
                   x={W - 8}
                   y={y}

@@ -1396,7 +1396,7 @@ const StatCard = memo(function StatCard({
   const color = STATUS_COLOR[status];
   return (
     <div
-      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
+      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1405,39 +1405,50 @@ const StatCard = memo(function StatCard({
       }}
     >
       <div
-        className="status-dot absolute top-4 right-4 w-3 h-3 rounded-full"
+        className="status-dot absolute top-3 right-3 w-2.5 h-2.5 rounded-full flex-shrink-0"
         style={{
           background: color,
           boxShadow: `0 0 8px ${color}`,
           opacity: unavailable ? 0 : 1,
         }}
       />
-      <div className="flex items-center gap-2">
-        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+      <div className="flex items-center gap-1.5 min-w-0 pr-5">
+        <span
+          style={{ color: "var(--color-electric)" }}
+          className="opacity-70 flex-shrink-0"
+        >
           {icon}
         </span>
         <span
-          className="text-xs font-body tracking-widest uppercase"
-          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+          className="font-body tracking-widest uppercase truncate"
+          style={{
+            color: "var(--color-seafoam)",
+            opacity: 0.8,
+            fontSize: "clamp(0.55rem, 1.4vw, 0.7rem)",
+          }}
         >
           {label}
         </span>
       </div>
-      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
+      <div className="flex items-baseline gap-1.5 leading-none min-w-0 mt-auto overflow-hidden">
         <span
-          className="font-display font-extrabold text-white"
+          className="font-display font-extrabold text-white truncate"
           style={{
-            fontSize: "clamp(1.8rem, 6vw, 4.5rem)",
+            fontSize: "clamp(1.5rem, 4.5vw, 3rem)",
             lineHeight: 1,
             opacity: unavailable ? 0.35 : 1,
           }}
         >
           {unavailable ? "—" : countedStr}
         </span>
-        {!unavailable && (
+        {!unavailable && unit && (
           <span
-            className="font-body text-sm tracking-wide"
-            style={{ color: "var(--color-electric)", opacity: 0.8 }}
+            className="font-body tracking-wide flex-shrink-0"
+            style={{
+              color: "var(--color-electric)",
+              opacity: 0.8,
+              fontSize: "clamp(0.65rem, 1.6vw, 0.85rem)",
+            }}
           >
             {unit}
           </span>
@@ -1454,7 +1465,7 @@ const TimeCard = memo(function TimeCard({
 }: { label: string; value: string; icon: React.ReactNode }) {
   return (
     <div
-      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
+      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1462,21 +1473,28 @@ const TimeCard = memo(function TimeCard({
         boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
       }}
     >
-      <div className="flex items-center gap-2">
-        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span
+          style={{ color: "var(--color-electric)" }}
+          className="opacity-70 flex-shrink-0"
+        >
           {icon}
         </span>
         <span
-          className="text-xs font-body tracking-widest uppercase"
-          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+          className="font-body tracking-widest uppercase truncate"
+          style={{
+            color: "var(--color-seafoam)",
+            opacity: 0.8,
+            fontSize: "clamp(0.55rem, 1.4vw, 0.7rem)",
+          }}
         >
           {label}
         </span>
       </div>
-      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
+      <div className="flex items-baseline leading-none min-w-0 mt-auto overflow-hidden">
         <span
-          className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+          className="font-display font-extrabold text-white truncate"
+          style={{ fontSize: "clamp(1.5rem, 4.5vw, 3rem)", lineHeight: 1 }}
         >
           {value}
         </span>
@@ -1490,7 +1508,7 @@ const CompassCard = memo(function CompassCard({
 }: { degrees: number }) {
   return (
     <div
-      className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
+      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1499,27 +1517,34 @@ const CompassCard = memo(function CompassCard({
       }}
     >
       <div
-        className="status-dot absolute top-4 right-4 w-3 h-3 rounded-full"
+        className="status-dot absolute top-3 right-3 w-2.5 h-2.5 rounded-full flex-shrink-0"
         style={{
           background: STATUS_COLOR.average,
           boxShadow: `0 0 8px ${STATUS_COLOR.average}`,
         }}
       />
-      <div className="flex items-center gap-2">
-        <span style={{ color: "var(--color-electric)" }} className="opacity-70">
+      <div className="flex items-center gap-1.5 min-w-0 pr-5">
+        <span
+          style={{ color: "var(--color-electric)" }}
+          className="opacity-70 flex-shrink-0"
+        >
           <Wind size={14} />
         </span>
         <span
-          className="text-xs font-body tracking-widest uppercase"
-          style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+          className="font-body tracking-widest uppercase truncate"
+          style={{
+            color: "var(--color-seafoam)",
+            opacity: 0.8,
+            fontSize: "clamp(0.55rem, 1.4vw, 0.7rem)",
+          }}
         >
           WIND DIRECTION
         </span>
       </div>
-      <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
+      <div className="flex items-baseline leading-none min-w-0 mt-auto overflow-hidden">
         <span
-          className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+          className="font-display font-extrabold text-white truncate"
+          style={{ fontSize: "clamp(1.5rem, 4.5vw, 3rem)", lineHeight: 1 }}
         >
           {degreesToCompass(degrees)}
         </span>
@@ -1926,11 +1951,11 @@ function LoadingSkeleton() {
       className="animate-pulse space-y-6"
       data-ocid="dashboard.loading_state"
     >
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div
             key={i}
-            className="h-40 rounded-xl"
+            className="aspect-[4/3] rounded-xl"
             style={{ background: "rgba(13,79,110,0.2)" }}
           />
         ))}
@@ -2158,23 +2183,29 @@ export default function App() {
   }, [data]);
 
   // Tile picker toggle
-  const toggleTile = useCallback((id: TileId) => {
-    setTileOrderState((prev) => {
-      if (prev.includes(id)) {
-        if (prev.length <= 2) {
+  const toggleTile = useCallback(
+    (id: TileId) => {
+      if (tileOrder.includes(id)) {
+        if (tileOrder.length <= 2) {
           setMinTileWarning(true);
           setTimeout(() => setMinTileWarning(false), 2500);
-          return prev;
+          return;
         }
-        const next = prev.filter((t) => t !== id);
-        saveTileOrder(next);
-        return next;
+        setTileOrder(tileOrder.filter((t) => t !== id));
+      } else {
+        const SPECIAL_TILES: TileId[] = ["tide", "forecast"];
+        const insertIdx = tileOrder.findIndex((t) => SPECIAL_TILES.includes(t));
+        if (insertIdx === -1) {
+          setTileOrder([...tileOrder, id]);
+        } else {
+          const updated = [...tileOrder];
+          updated.splice(insertIdx, 0, id);
+          setTileOrder(updated);
+        }
       }
-      const next = [...prev, id];
-      saveTileOrder(next);
-      return next;
-    });
-  }, []);
+    },
+    [tileOrder, setTileOrder],
+  );
 
   // Selected day helpers
   const getDayIndex = useCallback(
@@ -3173,7 +3204,7 @@ export default function App() {
                   </div>
                   <div
                     ref={conditionGridRef}
-                    className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
+                    className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
                   >
                     {tileOrder.map((tileId, idx) => {
                       const isWide = tileId === "tide" || tileId === "forecast";
@@ -3184,7 +3215,11 @@ export default function App() {
                         <div
                           key={tileId}
                           {...getTileHandlers(idx)}
-                          className={isWide ? "col-span-2 md:col-span-5" : ""}
+                          className={
+                            isWide
+                              ? "col-span-2 sm:col-span-3 lg:col-span-4 xl:col-span-5"
+                              : "aspect-[4/3]"
+                          }
                           style={{
                             cursor: dragEnabled
                               ? activeTileIndex === idx

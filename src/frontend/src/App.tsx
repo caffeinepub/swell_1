@@ -1380,6 +1380,7 @@ const StatCard = memo(function StatCard({
   status,
   icon,
   decimals = 1,
+  unavailable = false,
 }: {
   label: string;
   value: number;
@@ -1387,8 +1388,9 @@ const StatCard = memo(function StatCard({
   status: Status;
   icon: React.ReactNode;
   decimals?: number;
+  unavailable?: boolean;
 }) {
-  const countedStr = useCountUp(value, 1000, decimals);
+  const countedStr = useCountUp(unavailable ? 0 : value, 1000, decimals);
   const color = STATUS_COLOR[status];
   return (
     <div
@@ -1402,7 +1404,11 @@ const StatCard = memo(function StatCard({
     >
       <div
         className="status-dot absolute top-4 right-4 w-3 h-3 rounded-full"
-        style={{ background: color, boxShadow: `0 0 8px ${color}` }}
+        style={{
+          background: color,
+          boxShadow: `0 0 8px ${color}`,
+          opacity: unavailable ? 0 : 1,
+        }}
       />
       <div className="flex items-center gap-2">
         <span style={{ color: "var(--color-electric)" }} className="opacity-70">
@@ -1418,16 +1424,22 @@ const StatCard = memo(function StatCard({
       <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
           className="font-display font-extrabold text-white"
-          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
+          style={{
+            fontSize: "clamp(1.8rem, 6vw, 4.5rem)",
+            lineHeight: 1,
+            opacity: unavailable ? 0.35 : 1,
+          }}
         >
-          {countedStr}
+          {unavailable ? "—" : countedStr}
         </span>
-        <span
-          className="font-body text-sm tracking-wide"
-          style={{ color: "var(--color-electric)", opacity: 0.8 }}
-        >
-          {unit}
-        </span>
+        {!unavailable && (
+          <span
+            className="font-body text-sm tracking-wide"
+            style={{ color: "var(--color-electric)", opacity: 0.8 }}
+          >
+            {unit}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -2355,187 +2367,193 @@ export default function App() {
             </div>
           );
         case "windGust":
-          return data.windGust !== undefined ? (
+          return (
             <StatCard
               label="Wind Gusts"
-              value={displaySpeed(data.windGust)}
+              value={displaySpeed(data.windGust ?? 0)}
               unit={speedLabel}
-              status={windStatus(data.windGust)}
+              status={windStatus(data.windGust ?? 0)}
               icon={<Zap size={14} />}
               decimals={1}
+              unavailable={data.windGust === undefined}
             />
-          ) : null;
+          );
         case "windSpeed80m":
-          return data.windSpeed80m !== undefined ? (
+          return (
             <StatCard
               label="Wind at 80m"
-              value={displaySpeed(data.windSpeed80m)}
+              value={displaySpeed(data.windSpeed80m ?? 0)}
               unit={speedLabel}
-              status={windStatus(data.windSpeed80m)}
+              status={windStatus(data.windSpeed80m ?? 0)}
               icon={<Wind size={14} />}
               decimals={1}
+              unavailable={data.windSpeed80m === undefined}
             />
-          ) : null;
+          );
         case "pressure":
-          return data.pressure !== undefined ? (
+          return (
             <StatCard
               label="Pressure"
-              value={displayPressure(data.pressure)}
+              value={displayPressure(data.pressure ?? 0)}
               unit={pressureLabel}
               status="average"
               icon={<Gauge size={14} />}
               decimals={pressureDecimals}
+              unavailable={data.pressure === undefined}
             />
-          ) : null;
+          );
         case "visibility":
-          return data.visibility !== undefined ? (
+          return (
             <StatCard
               label="Visibility"
-              value={displayDistance(data.visibility)}
+              value={displayDistance(data.visibility ?? 0)}
               unit={distanceLabel}
               status="good"
               icon={<Eye size={14} />}
               decimals={1}
+              unavailable={data.visibility === undefined}
             />
-          ) : null;
+          );
         case "humidity":
-          return data.humidity !== undefined ? (
+          return (
             <StatCard
               label="Humidity"
-              value={data.humidity}
+              value={data.humidity ?? 0}
               unit="%"
               status="average"
               icon={<Droplets size={14} />}
               decimals={0}
+              unavailable={data.humidity === undefined}
             />
-          ) : null;
+          );
         case "dewPoint":
-          return data.dewPoint !== undefined ? (
+          return (
             <StatCard
               label="Dew Point"
-              value={displayTemp(data.dewPoint)}
+              value={displayTemp(data.dewPoint ?? 0)}
               unit={tempLabel}
-              status={tempStatus(data.dewPoint)}
+              status={tempStatus(data.dewPoint ?? 0)}
               icon={<Droplets size={14} />}
               decimals={0}
+              unavailable={data.dewPoint === undefined}
             />
-          ) : null;
-        case "uvIndex":
-          return data.uvIndex !== undefined ? (
+          );
+        case "uvIndex": {
+          const uv = data.uvIndex ?? 0;
+          return (
             <StatCard
               label="UV Index"
-              value={data.uvIndex}
+              value={uv}
               unit=""
-              status={
-                data.uvIndex > 7
-                  ? "poor"
-                  : data.uvIndex > 3
-                    ? "average"
-                    : "good"
-              }
+              status={uv > 7 ? "poor" : uv > 3 ? "average" : "good"}
               icon={<Sun size={14} />}
               decimals={0}
+              unavailable={data.uvIndex === undefined}
             />
-          ) : null;
+          );
+        }
         case "cloudCover":
-          return data.cloudCover !== undefined ? (
+          return (
             <StatCard
               label="Cloud Cover"
-              value={data.cloudCover}
+              value={data.cloudCover ?? 0}
               unit="%"
               status="average"
               icon={<Cloud size={14} />}
               decimals={0}
+              unavailable={data.cloudCover === undefined}
             />
-          ) : null;
-        case "precipitation":
-          return data.precipitation !== undefined ? (
+          );
+        case "precipitation": {
+          const precip = data.precipitation ?? 0;
+          return (
             <StatCard
               label="Rain Chance"
-              value={data.precipitation}
+              value={precip}
               unit="%"
-              status={
-                data.precipitation > 70
-                  ? "poor"
-                  : data.precipitation > 30
-                    ? "average"
-                    : "good"
-              }
+              status={precip > 70 ? "poor" : precip > 30 ? "average" : "good"}
               icon={<Droplets size={14} />}
               decimals={0}
+              unavailable={data.precipitation === undefined}
             />
-          ) : null;
+          );
+        }
         case "swellHeight":
-          return data.swellHeight !== undefined ? (
+          return (
             <StatCard
               label="Swell Height"
-              value={displayHeight(data.swellHeight)}
+              value={displayHeight(data.swellHeight ?? 0)}
               unit={heightLabel}
-              status={waveStatus(data.swellHeight)}
+              status={waveStatus(data.swellHeight ?? 0)}
               icon={<Waves size={14} />}
               decimals={1}
+              unavailable={data.swellHeight === undefined}
             />
-          ) : null;
+          );
         case "swellPeriod2":
-          return data.swellPeriod2 !== undefined ? (
+          return (
             <StatCard
               label="Swell Period"
-              value={data.swellPeriod2}
+              value={data.swellPeriod2 ?? 0}
               unit="s"
               status="good"
               icon={<Waves size={14} />}
               decimals={0}
+              unavailable={data.swellPeriod2 === undefined}
             />
-          ) : null;
+          );
         case "windWaveHeight":
-          return data.windWaveHeight !== undefined ? (
+          return (
             <StatCard
               label="Wind Wave Ht"
-              value={displayHeight(data.windWaveHeight)}
+              value={displayHeight(data.windWaveHeight ?? 0)}
               unit={heightLabel}
-              status={waveStatus(data.windWaveHeight)}
+              status={waveStatus(data.windWaveHeight ?? 0)}
               icon={<Waves size={14} />}
               decimals={1}
+              unavailable={data.windWaveHeight === undefined}
             />
-          ) : null;
+          );
         case "windWavePeriod":
-          return data.windWavePeriod !== undefined ? (
+          return (
             <StatCard
               label="Wind Wave Per"
-              value={data.windWavePeriod}
+              value={data.windWavePeriod ?? 0}
               unit="s"
               status="average"
               icon={<Waves size={14} />}
               decimals={0}
+              unavailable={data.windWavePeriod === undefined}
             />
-          ) : null;
+          );
         case "seaTemp":
-          return data.seaTemp !== undefined ? (
+          return (
             <StatCard
               label="Sea Temp"
-              value={displayTemp(data.seaTemp)}
+              value={displayTemp(data.seaTemp ?? 0)}
               unit={tempLabel}
-              status={tempStatus(data.seaTemp)}
+              status={tempStatus(data.seaTemp ?? 0)}
               icon={<Thermometer size={14} />}
               decimals={0}
+              unavailable={data.seaTemp === undefined}
             />
-          ) : null;
+          );
         case "sunrise":
-          return data.sunrise ? (
+          return (
             <TimeCard
               label="Sunrise"
-              value={data.sunrise}
+              value={data.sunrise ?? "—"}
               icon={<Sunrise size={14} />}
             />
-          ) : null;
+          );
         case "sunset":
-          return data.sunset ? (
+          return (
             <TimeCard
               label="Sunset"
-              value={data.sunset}
+              value={data.sunset ?? "—"}
               icon={<Sunset size={14} />}
             />
-          ) : null;
+          );
         default:
           return null;
       }

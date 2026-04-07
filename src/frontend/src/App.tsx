@@ -21,7 +21,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import HeroWaveCanvas from "./components/HeroWaveCanvas";
 import {
   Popover,
@@ -62,7 +62,6 @@ interface ConditionsData {
   dailySwellPeriod: number[];
   tideHeights: number[];
   utcOffsetSeconds: number;
-  // New optional fields
   windGust?: number;
   windSpeed80m?: number;
   pressure?: number;
@@ -142,6 +141,48 @@ const ALL_TILE_IDS: TileId[] = [
   "seaTemp",
   "sunrise",
   "sunset",
+];
+
+// Grouped tile order for the settings picker
+type TileGroup = { label: string; ids: TileId[] };
+const TILE_GROUPS: TileGroup[] = [
+  {
+    label: "WATER & WAVES",
+    ids: [
+      "wave",
+      "period",
+      "swellHeight",
+      "swellPeriod2",
+      "windWaveHeight",
+      "windWavePeriod",
+      "waterTemp",
+      "seaTemp",
+      "tide",
+    ],
+  },
+  {
+    label: "WIND",
+    ids: ["wind", "windGust", "windSpeed80m", "direction"],
+  },
+  {
+    label: "WEATHER & ATMOSPHERE",
+    ids: [
+      "airTemp",
+      "pressure",
+      "visibility",
+      "humidity",
+      "dewPoint",
+      "uvIndex",
+      "cloudCover",
+      "precipitation",
+      "sunrise",
+      "sunset",
+    ],
+  },
+  {
+    label: "FORECAST",
+    ids: ["forecast"],
+  },
 ];
 
 const TILE_CATALOG: Record<TileId, { label: string; description: string }> = {
@@ -330,32 +371,42 @@ function fullDayName(dateStr: string): string {
 const PRESETS_KEY = "swell_presets";
 const UNITS_KEY = "swell_units";
 const DRAG_KEY = "swell_drag_enabled";
+const LAST_SPOT_KEY = "swell_last_spot";
 
 type HeightUnit = "ft" | "m";
 type TempUnit = "F" | "C";
 type SpeedUnit = "kts" | "mph" | "km/h";
+type PressureUnit = "hPa" | "inHg" | "mmHg";
+type DistanceUnit = "Nm" | "Miles" | "Km";
 
 interface UnitSettings {
   height: HeightUnit;
   temp: TempUnit;
   speed: SpeedUnit;
+  pressure: PressureUnit;
+  distance: DistanceUnit;
 }
 
-const DEFAULT_UNITS: UnitSettings = { height: "ft", temp: "F", speed: "kts" };
+const DEFAULT_UNITS: UnitSettings = {
+  height: "ft",
+  temp: "F",
+  speed: "kts",
+  pressure: "hPa",
+  distance: "Nm",
+};
 
 function loadUnits(): UnitSettings {
   try {
     const raw = localStorage.getItem(UNITS_KEY);
     if (!raw) return DEFAULT_UNITS;
     const parsed = JSON.parse(raw);
-    if (
-      typeof parsed.height === "string" &&
-      typeof parsed.temp === "string" &&
-      typeof parsed.speed === "string"
-    ) {
-      return parsed as UnitSettings;
-    }
-    return DEFAULT_UNITS;
+    return {
+      height: parsed.height ?? DEFAULT_UNITS.height,
+      temp: parsed.temp ?? DEFAULT_UNITS.temp,
+      speed: parsed.speed ?? DEFAULT_UNITS.speed,
+      pressure: parsed.pressure ?? DEFAULT_UNITS.pressure,
+      distance: parsed.distance ?? DEFAULT_UNITS.distance,
+    } as UnitSettings;
   } catch {
     return DEFAULT_UNITS;
   }
@@ -382,6 +433,37 @@ function loadDragEnabled(): boolean {
 function saveDragEnabled(v: boolean): void {
   try {
     localStorage.setItem(DRAG_KEY, JSON.stringify(v));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadLastSpot(): Spot | null {
+  try {
+    const raw = localStorage.getItem(LAST_SPOT_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (
+      s &&
+      typeof s.name === "string" &&
+      typeof s.lat === "number" &&
+      typeof s.lng === "number"
+    ) {
+      return s as Spot;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastSpot(spot: Spot | null): void {
+  try {
+    if (spot) {
+      localStorage.setItem(LAST_SPOT_KEY, JSON.stringify(spot));
+    } else {
+      localStorage.removeItem(LAST_SPOT_KEY);
+    }
   } catch {
     /* ignore */
   }
@@ -451,6 +533,22 @@ function kmhToKnots(k: number): number {
 }
 function kmhToMph(k: number): number {
   return k * 0.621371;
+}
+function hPaToInHg(hpa: number): number {
+  return hpa * 0.02953;
+}
+function hPaToMmHg(hpa: number): number {
+  return hpa * 0.750064;
+}
+// Visibility: API returns meters
+function metersToNm(m: number): number {
+  return m / 1852;
+}
+function metersToMiles(m: number): number {
+  return m / 1609.344;
+}
+function metersToKm(m: number): number {
+  return m / 1000;
 }
 
 function loadPresets(): PresetSlots {
@@ -646,16 +744,21 @@ function geoToSpot(g: GeoResult): Spot {
 }
 
 // ─── API fetch ────────────────────────────────────────────────────────────────
-async function fetchConditions(spot: Spot): Promise<ConditionsData> {
+async function fetchConditions(
+  spot: Spot,
+  signal?: AbortSignal,
+): Promise<ConditionsData> {
   const { lat, lng } = spot;
   const tz =
     spot.timezone === "auto" ? "auto" : encodeURIComponent(spot.timezone);
   const [marineRes, weatherRes] = await Promise.all([
     fetch(
       `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_direction,wave_period,swell_wave_period,swell_wave_height,wind_wave_height,wind_wave_period,sea_surface_temperature,sea_level_height_msl&daily=wave_height_max,wave_direction_dominant,swell_wave_period_max&timezone=${tz}&past_days=16&forecast_days=16`,
+      { signal },
     ),
     fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=windspeed_10m,winddirection_10m,apparent_temperature,temperature_2m,windgusts_10m,windspeed_80m,surface_pressure,visibility,relative_humidity_2m,dew_point_2m,uv_index,cloud_cover,precipitation_probability&daily=windspeed_10m_max,sunrise,sunset&current_weather=true&timezone=${tz}`,
+      { signal },
     ),
   ]);
   const [marine, weather] = await Promise.all([
@@ -728,7 +831,6 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
       return d.toISOString().slice(0, 10);
     });
 
-  // New fields
   const windGust: number | undefined = weather.hourly?.windgusts_10m?.[wi];
   const windSpeed80m: number | undefined = weather.hourly?.windspeed_80m?.[wi];
   const pressure: number | undefined = weather.hourly?.surface_pressure?.[wi];
@@ -751,7 +853,6 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   const seaTemp: number | undefined =
     marine.hourly?.sea_surface_temperature?.[hi];
 
-  // Sunrise/sunset — format as HH:MM local time string
   function formatTimeStr(isoStr: string | undefined): string | undefined {
     if (!isoStr) return undefined;
     try {
@@ -764,7 +865,6 @@ async function fetchConditions(spot: Spot): Promise<ConditionsData> {
   const sunrise = formatTimeStr(weather.daily?.sunrise?.[0]);
   const sunset = formatTimeStr(weather.daily?.sunset?.[0]);
 
-  // Tide heights
   const allTideHeights: (number | null)[] =
     marine.hourly?.sea_level_height_msl ?? [];
   const marineHourlyTimes: string[] = marine.hourly?.time ?? [];
@@ -923,7 +1023,7 @@ function SearchModal({
               className="font-body text-xs mt-0.5"
               style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
             >
-              Search any surf spot worldwide
+              Search any location worldwide
             </p>
           </div>
           <button
@@ -957,9 +1057,9 @@ function SearchModal({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. Pipeline, Hossegor, Uluwatu…"
+              placeholder="Search any location…"
               className="flex-1 bg-transparent outline-none font-body text-sm text-white placeholder:opacity-40"
-              aria-label="Search for a surf spot"
+              aria-label="Search for a location"
             />
             {searching && (
               <div
@@ -1003,7 +1103,7 @@ function SearchModal({
               className="px-6 py-8 text-center font-body text-sm"
               style={{ color: "var(--color-seafoam)", opacity: 0.5 }}
             >
-              No spots found for "{query}"
+              No locations found for "{query}"
             </div>
           )}
           {results.length === 0 && !query.trim() && (
@@ -1011,7 +1111,7 @@ function SearchModal({
               className="px-6 py-6 text-center font-body text-xs"
               style={{ color: "var(--color-seafoam)", opacity: 0.4 }}
             >
-              Start typing to search surf spots worldwide
+              Start typing to search locations worldwide
             </div>
           )}
           {results.map((result, i) => (
@@ -1106,7 +1206,7 @@ function PresetBar({
   return (
     <>
       <fieldset className="border-0 p-0 m-0 w-full">
-        <legend className="sr-only">Preset surf spots</legend>
+        <legend className="sr-only">Preset locations</legend>
         <div ref={presetBarRef} className="flex flex-col gap-2 w-full">
           {presets.map((spot, i) => {
             const isSelected =
@@ -1273,14 +1373,13 @@ function PresetBar({
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function StatCard({
+const StatCard = memo(function StatCard({
   label,
   value,
   unit,
   status,
   icon,
   decimals = 1,
-  yellowValue = false,
 }: {
   label: string;
   value: number;
@@ -1288,7 +1387,6 @@ function StatCard({
   status: Status;
   icon: React.ReactNode;
   decimals?: number;
-  yellowValue?: boolean;
 }) {
   const countedStr = useCountUp(value, 1000, decimals);
   const color = STATUS_COLOR[status];
@@ -1319,12 +1417,8 @@ function StatCard({
       </div>
       <div className="flex items-baseline gap-2 leading-none flex-wrap min-w-0">
         <span
-          className="font-display font-extrabold"
-          style={{
-            fontSize: "clamp(1.8rem, 6vw, 4.5rem)",
-            lineHeight: 1,
-            color: yellowValue ? "#FFE033" : "white",
-          }}
+          className="font-display font-extrabold text-white"
+          style={{ fontSize: "clamp(1.8rem, 6vw, 4.5rem)", lineHeight: 1 }}
         >
           {countedStr}
         </span>
@@ -1337,9 +1431,9 @@ function StatCard({
       </div>
     </div>
   );
-}
+});
 
-function TimeCard({
+const TimeCard = memo(function TimeCard({
   label,
   value,
   icon,
@@ -1375,9 +1469,11 @@ function TimeCard({
       </div>
     </div>
   );
-}
+});
 
-function CompassCard({ degrees }: { degrees: number }) {
+const CompassCard = memo(function CompassCard({
+  degrees,
+}: { degrees: number }) {
   return (
     <div
       className="relative flex flex-col gap-2 rounded-xl p-4 sm:p-6 flex-1 min-w-0"
@@ -1416,9 +1512,9 @@ function CompassCard({ degrees }: { degrees: number }) {
       </div>
     </div>
   );
-}
+});
 
-function ForecastCard({
+const ForecastCard = memo(function ForecastCard({
   date,
   waveMax,
   waveDir,
@@ -1491,10 +1587,7 @@ function ForecastCard({
         {heightLabel}
       </span>
       {swellPeriod > 0 && (
-        <span
-          className="font-display font-bold text-base"
-          style={{ color: "#FFE033" }}
-        >
+        <span className="font-display font-bold text-white text-base">
           {swellPeriod.toFixed(0)}s
         </span>
       )}
@@ -1543,9 +1636,91 @@ function ForecastCard({
       </div>
     </button>
   );
+});
+
+// ─── TideChart with cosine interpolation ──────────────────────────────────────
+function buildCosineTidePath(
+  tideHeights: number[],
+  W: number,
+  H: number,
+): {
+  pathD: string;
+  tideMax: number;
+  tideMin: number;
+  toSVGY: (v: number) => number;
+} {
+  const validHeights = tideHeights.filter(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
+  const hasRealData = validHeights.length >= 4;
+
+  const points: { x: number; y: number }[] = [];
+  if (hasRealData) {
+    for (let i = 0; i < Math.min(tideHeights.length, 24); i++) {
+      const v = tideHeights[i];
+      points.push({
+        x: i / 23,
+        y: typeof v === "number" && Number.isFinite(v) ? v : 0,
+      });
+    }
+  } else {
+    for (let i = 0; i <= 23; i++) {
+      points.push({
+        x: i / 23,
+        y: 1.5 + 1.2 * Math.sin((2 * Math.PI * i) / 12.42),
+      });
+    }
+  }
+
+  const tideYValues = points.map((p) => p.y);
+  const tideMax = Math.max(...tideYValues);
+  const tideMin = Math.min(...tideYValues);
+  const yRange = tideMax - tideMin || 1;
+  const yPad = yRange * 0.15;
+  const yLo = tideMin - yPad;
+  const yHi = tideMax + yPad;
+  const toSVGY = (v: number) =>
+    H - ((v - yLo) / (yHi - yLo)) * (H * 0.8) - H * 0.1;
+
+  // Find local extrema indices
+  const extrema: number[] = [0];
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1].y;
+    const cur = points[i].y;
+    const next = points[i + 1].y;
+    if ((cur >= prev && cur >= next) || (cur <= prev && cur <= next)) {
+      // Only add if meaningfully different from last extremum
+      const lastExt = extrema[extrema.length - 1];
+      if (Math.abs(cur - points[lastExt].y) > yRange * 0.05) {
+        extrema.push(i);
+      }
+    }
+  }
+  extrema.push(points.length - 1);
+
+  // Build path using cosine interpolation between extrema
+  const svgExtrema = extrema.map((idx) => ({
+    x: points[idx].x * W,
+    y: toSVGY(points[idx].y),
+    idx,
+  }));
+
+  let pathD = `M ${svgExtrema[0].x} ${svgExtrema[0].y}`;
+  for (let i = 1; i < svgExtrema.length; i++) {
+    const x0 = svgExtrema[i - 1].x;
+    const y0 = svgExtrema[i - 1].y;
+    const x1 = svgExtrema[i].x;
+    const y1 = svgExtrema[i].y;
+    // Half-cosine control points: vertical tangents at each extremum
+    const cpx0 = x0 + (x1 - x0) * 0.5;
+    const cpx1 = x1 - (x1 - x0) * 0.5;
+    pathD += ` C ${cpx0} ${y0}, ${cpx1} ${y1}, ${x1} ${y1}`;
+  }
+
+  return { pathD, tideMax, tideMin, toSVGY };
 }
 
-function TideChart({
+const TideChart = memo(function TideChart({
   tideHeights,
   utcOffsetSeconds,
   displayHeight,
@@ -1559,48 +1734,12 @@ function TideChart({
   const svgRef = useRef<SVGPathElement>(null);
   const W = 800;
   const H = 160;
-  const points: { x: number; y: number }[] = [];
-  const validHeights = tideHeights.filter(
-    (v) => typeof v === "number" && Number.isFinite(v),
+
+  const { pathD, tideMax, tideMin, toSVGY } = useMemo(
+    () => buildCosineTidePath(tideHeights, W, H),
+    [tideHeights],
   );
-  const hasRealData = validHeights.length >= 4;
-  if (hasRealData) {
-    for (let i = 0; i < Math.min(tideHeights.length, 24); i++) {
-      const v = tideHeights[i];
-      points.push({
-        x: i / 23,
-        y: typeof v === "number" && Number.isFinite(v) ? v : 0,
-      });
-    }
-  } else {
-    for (let i = 0; i <= 23; i++) {
-      const h = 1.5 + 1.2 * Math.sin((2 * Math.PI * i) / 12.42);
-      points.push({ x: i / 23, y: h });
-    }
-  }
-  const tideYValues = points.map((p) => p.y);
-  const tideMax = Math.max(...tideYValues);
-  const tideMin = Math.min(...tideYValues);
-  const yRange = tideMax - tideMin || 1;
-  const yPad = yRange * 0.15;
-  const yLo = tideMin - yPad;
-  const yHi = tideMax + yPad;
-  const toSVGY = (v: number) =>
-    H - ((v - yLo) / (yHi - yLo)) * (H * 0.8) - H * 0.1;
-  const svgPts = points.map((p) => ({ x: p.x * W, y: toSVGY(p.y) }));
-  const tension = 0.5;
-  let pathD = `M ${svgPts[0].x} ${svgPts[0].y}`;
-  for (let i = 1; i < svgPts.length; i++) {
-    const p0 = svgPts[Math.max(i - 2, 0)];
-    const p1 = svgPts[i - 1];
-    const p2 = svgPts[i];
-    const p3 = svgPts[Math.min(i + 1, svgPts.length - 1)];
-    const cp1x = p1.x + (p2.x - p0.x) * tension;
-    const cp1y = p1.y + (p2.y - p0.y) * tension;
-    const cp2x = p2.x - (p3.x - p1.x) * tension;
-    const cp2y = p2.y - (p3.y - p1.y) * tension;
-    pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-  }
+
   const nowUtcMs = Date.now();
   const localMs = nowUtcMs + utcOffsetSeconds * 1000;
   const localDate = new Date(localMs);
@@ -1608,9 +1747,11 @@ function TideChart({
   const localMin = localDate.getUTCMinutes();
   const currentHourFrac = (localHour + localMin / 60) / 24;
   const currentX = currentHourFrac * W;
+
   const timeLabels = [0, 6, 12, 18, 24].map(
     (h) => `${String(h % 24).padStart(2, "0")}:00`,
   );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: tideHeights triggers re-animation
   useEffect(() => {
     const el = svgRef.current;
@@ -1627,16 +1768,22 @@ function TideChart({
       });
     });
   }, [tideHeights]);
+
   const gridFracs = [0.25, 0.5, 0.75];
-  const currentTideRaw = (() => {
-    if (!hasRealData || tideHeights.length < 2) return null;
+
+  const currentTideRaw = useMemo(() => {
+    const validHeights = tideHeights.filter(
+      (v) => typeof v === "number" && Number.isFinite(v),
+    );
+    if (validHeights.length < 4 || tideHeights.length < 2) return null;
     const h = Math.floor(localHour + localMin / 60);
     const frac = localMin / 60;
     const v0 = tideHeights[Math.min(h, tideHeights.length - 1)];
     const v1 = tideHeights[Math.min(h + 1, tideHeights.length - 1)];
     if (typeof v0 !== "number" || typeof v1 !== "number") return null;
     return v0 + (v1 - v0) * frac;
-  })();
+  }, [tideHeights, localHour, localMin]);
+
   return (
     <div
       className="w-full overflow-hidden rounded-xl"
@@ -1732,13 +1879,13 @@ function TideChart({
             </text>
           ))}
           {[
-            { value: tideMax, y: toSVGY(tideMax) },
-            { value: tideMin, y: toSVGY(tideMin) },
-          ].map(({ value, y }) => {
-            const label = `${displayHeight(value).toFixed(1)}${heightLabel}`;
+            { value: tideMax, y: toSVGY(tideMax), prefix: "Hi" },
+            { value: tideMin, y: toSVGY(tideMin), prefix: "Lo" },
+          ].map(({ value, y, prefix }) => {
+            const label = `${prefix}: ${displayHeight(value).toFixed(1)}${heightLabel}`;
             const labelW = label.length * 11;
             return (
-              <g key={value}>
+              <g key={`${prefix}-${value}`}>
                 <rect
                   x={W - labelW - 10}
                   y={y - 13}
@@ -1766,7 +1913,7 @@ function TideChart({
       </div>
     </div>
   );
-}
+});
 
 function LoadingSkeleton() {
   return (
@@ -1839,11 +1986,13 @@ export default function App() {
   );
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [minTileWarning, setMinTileWarning] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const setDragEnabled = useCallback((v: boolean) => {
     setDragEnabledState(v);
     saveDragEnabled(v);
   }, []);
+
   const setUnits = useCallback((next: UnitSettings) => {
     setUnitsState(next);
     saveUnits(next);
@@ -1856,6 +2005,7 @@ export default function App() {
     setTileOrderState(next);
     saveTileOrder(next);
   }, []);
+
   const conditionGridRef = useRef<HTMLDivElement | null>(null);
   const {
     getHandlers: getTileHandlers,
@@ -1874,21 +2024,35 @@ export default function App() {
   }, []);
 
   const loadSpot = useCallback(async (spot: Spot) => {
+    // Abort any in-flight fetch
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setSelectedSpot(spot);
+    saveLastSpot(spot);
     setLoading(true);
     setError(null);
     setData(null);
     setSelectedDay(null);
     try {
-      const result = await fetchConditions(spot);
+      const result = await fetchConditions(spot, controller.signal);
       setData(result);
     } catch (e) {
-      setError("Failed to load conditions. Please try again.");
-      console.error(e);
+      if ((e as Error).name !== "AbortError") {
+        setError("Failed to load conditions. Please try again.");
+        console.error(e);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Restore last spot silently on mount
+  useEffect(() => {
+    const last = loadLastSpot();
+    if (last) loadSpot(last);
+  }, [loadSpot]);
 
   const handleUseMyLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -1931,29 +2095,62 @@ export default function App() {
     );
   }, [loadSpot]);
 
-  const displayHeight = (m: number) =>
-    units.height === "ft" ? metresToFeet(m) : m;
+  // Unit conversion callbacks
+  const displayHeight = useCallback(
+    (m: number) => (units.height === "ft" ? metresToFeet(m) : m),
+    [units.height],
+  );
   const heightLabel = units.height === "ft" ? "ft" : "m";
-  const displayTemp = (c: number) =>
-    units.temp === "F" ? celsiusToFahrenheit(c) : c;
+  const displayTemp = useCallback(
+    (c: number) => (units.temp === "F" ? celsiusToFahrenheit(c) : c),
+    [units.temp],
+  );
   const tempLabel = units.temp === "F" ? "°F" : "°C";
-  const displaySpeed = (k: number) =>
-    units.speed === "kts"
-      ? kmhToKnots(k)
-      : units.speed === "mph"
-        ? kmhToMph(k)
-        : k;
+  const displaySpeed = useCallback(
+    (k: number) =>
+      units.speed === "kts"
+        ? kmhToKnots(k)
+        : units.speed === "mph"
+          ? kmhToMph(k)
+          : k,
+    [units.speed],
+  );
   const speedLabel = units.speed;
 
-  const overallRating: "good" | "average" | "poor" = data
-    ? waveStatus(data.waveHeight) === "good" &&
+  const displayPressure = useCallback(
+    (hpa: number) =>
+      units.pressure === "inHg"
+        ? hPaToInHg(hpa)
+        : units.pressure === "mmHg"
+          ? hPaToMmHg(hpa)
+          : hpa,
+    [units.pressure],
+  );
+  const pressureLabel = units.pressure;
+  const pressureDecimals = units.pressure === "hPa" ? 0 : 2;
+
+  const displayDistance = useCallback(
+    (meters: number) =>
+      units.distance === "Nm"
+        ? metersToNm(meters)
+        : units.distance === "Miles"
+          ? metersToMiles(meters)
+          : metersToKm(meters),
+    [units.distance],
+  );
+  const distanceLabel =
+    units.distance === "Nm" ? "Nm" : units.distance === "Miles" ? "mi" : "km";
+
+  const overallRating: "good" | "average" | "poor" = useMemo(() => {
+    if (!data) return "average";
+    return waveStatus(data.waveHeight) === "good" &&
       windStatus(data.windSpeed) === "good"
       ? "good"
       : waveStatus(data.waveHeight) === "poor" ||
           windStatus(data.windSpeed) === "poor"
         ? "poor"
-        : "average"
-    : "average";
+        : "average";
+  }, [data]);
 
   // Tile picker toggle
   const toggleTile = useCallback((id: TileId) => {
@@ -1975,14 +2172,16 @@ export default function App() {
   }, []);
 
   // Selected day helpers
-  const getDayIndex = (dateStr: string | null): number => {
-    if (!dateStr || !data) return 0;
-    const idx = data.dailyDates.indexOf(dateStr);
-    return idx >= 0 ? idx : 0;
-  };
+  const getDayIndex = useCallback(
+    (dateStr: string | null): number => {
+      if (!dateStr || !data) return 0;
+      const idx = data.dailyDates.indexOf(dateStr);
+      return idx >= 0 ? idx : 0;
+    },
+    [data],
+  );
 
-  // Get the "effective" values for condition tiles (live or selected day)
-  const getEffectiveValues = () => {
+  const effective = useMemo(() => {
     if (!data) return null;
     if (!selectedDay)
       return {
@@ -2000,362 +2199,392 @@ export default function App() {
       swellPeriod: data.dailySwellPeriod[di] ?? data.swellPeriod,
       isLive: false,
     };
-  };
-  const effective = getEffectiveValues();
+  }, [data, selectedDay, getDayIndex]);
 
   const sectionTitle = selectedDay
     ? `${fullDayName(selectedDay)}'S CONDITIONS`
     : "TODAY'S CONDITIONS";
 
   // Render a single condition tile
-  const renderTile = (tileId: TileId) => {
-    if (!data || !effective) return null;
-    const isSelectedDayMode = !!selectedDay;
-    switch (tileId) {
-      case "wave":
-        return (
-          <StatCard
-            label="Wave Height"
-            value={displayHeight(effective.waveHeight)}
-            unit={heightLabel}
-            status={waveStatus(effective.waveHeight)}
-            icon={<Waves size={14} />}
-            decimals={1}
-          />
-        );
-      case "wind":
-        return (
-          <StatCard
-            label="Wind Speed"
-            value={displaySpeed(effective.windSpeed)}
-            unit={speedLabel}
-            status={windStatus(effective.windSpeed)}
-            icon={<Wind size={14} />}
-            decimals={1}
-          />
-        );
-      case "direction":
-        return <CompassCard degrees={effective.windDirection} />;
-      case "waterTemp":
-        return (
-          <StatCard
-            label={isSelectedDayMode ? "Water Temp (now)" : "Water Temp"}
-            value={displayTemp(data.waterTemp)}
-            unit={tempLabel}
-            status={tempStatus(data.waterTemp)}
-            icon={<Thermometer size={14} />}
-            decimals={0}
-          />
-        );
-      case "airTemp":
-        return (
-          <StatCard
-            label={isSelectedDayMode ? "Air Temp (now)" : "Air Temp"}
-            value={displayTemp(data.airTemp)}
-            unit={tempLabel}
-            status={tempStatus(data.airTemp)}
-            icon={<Thermometer size={14} />}
-            decimals={0}
-          />
-        );
-      case "period":
-        return (
-          <StatCard
-            label="WAVE PERIOD"
-            value={effective.swellPeriod}
-            unit="s"
-            status="good"
-            icon={<Waves size={14} />}
-            decimals={0}
-            yellowValue
-          />
-        );
-      case "tide":
-        if (isSelectedDayMode) {
+  const renderTile = useCallback(
+    (tileId: TileId) => {
+      if (!data || !effective) return null;
+      const isSelectedDayMode = !!selectedDay;
+      switch (tileId) {
+        case "wave":
+          return (
+            <StatCard
+              label="Wave Height"
+              value={displayHeight(effective.waveHeight)}
+              unit={heightLabel}
+              status={waveStatus(effective.waveHeight)}
+              icon={<Waves size={14} />}
+              decimals={1}
+            />
+          );
+        case "wind":
+          return (
+            <StatCard
+              label="Wind Speed"
+              value={displaySpeed(effective.windSpeed)}
+              unit={speedLabel}
+              status={windStatus(effective.windSpeed)}
+              icon={<Wind size={14} />}
+              decimals={1}
+            />
+          );
+        case "direction":
+          return <CompassCard degrees={effective.windDirection} />;
+        case "waterTemp":
+          return (
+            <StatCard
+              label={isSelectedDayMode ? "Water Temp (now)" : "Water Temp"}
+              value={displayTemp(data.waterTemp)}
+              unit={tempLabel}
+              status={tempStatus(data.waterTemp)}
+              icon={<Thermometer size={14} />}
+              decimals={0}
+            />
+          );
+        case "airTemp":
+          return (
+            <StatCard
+              label={isSelectedDayMode ? "Air Temp (now)" : "Air Temp"}
+              value={displayTemp(data.airTemp)}
+              unit={tempLabel}
+              status={tempStatus(data.airTemp)}
+              icon={<Thermometer size={14} />}
+              decimals={0}
+            />
+          );
+        case "period":
+          return (
+            <StatCard
+              label="WAVE PERIOD"
+              value={effective.swellPeriod}
+              unit="s"
+              status="good"
+              icon={<Waves size={14} />}
+              decimals={0}
+            />
+          );
+        case "tide":
+          if (isSelectedDayMode) {
+            return (
+              <div
+                className="w-full overflow-hidden rounded-xl flex items-center justify-center"
+                style={{
+                  border: "1px solid rgba(13,79,110,0.5)",
+                  background: "rgba(2,13,24,0.8)",
+                  minHeight: 120,
+                }}
+              >
+                <p
+                  className="font-body text-sm text-center px-6 py-8"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Tide chart is only available for today
+                </p>
+              </div>
+            );
+          }
+          return (
+            <TideChart
+              tideHeights={data.tideHeights}
+              utcOffsetSeconds={data.utcOffsetSeconds}
+              displayHeight={displayHeight}
+              heightLabel={heightLabel}
+            />
+          );
+        case "forecast":
           return (
             <div
-              className="w-full overflow-hidden rounded-xl flex items-center justify-center"
+              className="w-full overflow-hidden rounded-xl"
               style={{
                 border: "1px solid rgba(13,79,110,0.5)",
                 background: "rgba(2,13,24,0.8)",
-                minHeight: 120,
               }}
             >
-              <p
-                className="font-body text-sm text-center px-6 py-8"
-                style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
-              >
-                Tide chart is only available for today
-              </p>
-            </div>
-          );
-        }
-        return (
-          <TideChart
-            tideHeights={data.tideHeights}
-            utcOffsetSeconds={data.utcOffsetSeconds}
-            displayHeight={displayHeight}
-            heightLabel={heightLabel}
-          />
-        );
-      case "forecast":
-        return (
-          <div
-            className="w-full overflow-hidden rounded-xl"
-            style={{
-              border: "1px solid rgba(13,79,110,0.5)",
-              background: "rgba(2,13,24,0.8)",
-            }}
-          >
-            <div className="px-6 pt-5 pb-2">
-              <h3
-                className="font-body text-xs tracking-widest uppercase font-semibold"
-                style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
-              >
-                7-Day Forecast
-              </h3>
-            </div>
-            <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
-              <div
-                className="grid gap-2"
-                style={{
-                  gridTemplateColumns: "repeat(7, minmax(90px, 1fr))",
-                  minWidth: "min-content",
-                }}
-              >
-                {(() => {
-                  const nowLocalMs =
-                    Date.now() + (data.utcOffsetSeconds ?? 0) * 1000;
-                  const nowLocal = new Date(nowLocalMs);
-                  const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
-                  const todayIdx = Math.max(
-                    0,
-                    data.dailyDates.findIndex((d) => d === todayStr),
-                  );
-                  return data.dailyDates
-                    .slice(todayIdx, todayIdx + 7)
-                    .map((date, j) => {
-                      const i = todayIdx + j;
-                      const isToday = date === todayStr;
-                      return (
-                        <ForecastCard
-                          key={date}
-                          date={date}
-                          waveMax={data.dailyWaveMax[i] ?? 1}
-                          waveDir={data.dailyWaveDir[i] ?? 270}
-                          windSpeed={data.dailyWindSpeed[i] ?? 15}
-                          swellPeriod={data.dailySwellPeriod[i] ?? 0}
-                          index={j}
-                          displayHeight={displayHeight}
-                          heightLabel={heightLabel}
-                          displaySpeed={displaySpeed}
-                          speedLabel={speedLabel}
-                          isSelected={
-                            isToday ? !selectedDay : selectedDay === date
-                          }
-                          onClick={() => {
-                            if (isToday) {
-                              setSelectedDay(null);
-                            } else {
-                              setSelectedDay(date);
+              <div className="px-6 pt-5 pb-2">
+                <h3
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+                >
+                  7-Day Forecast
+                </h3>
+              </div>
+              <div className="px-4 pb-4 overflow-x-auto no-scrollbar">
+                <div
+                  className="grid gap-2"
+                  style={{
+                    gridTemplateColumns: "repeat(7, minmax(90px, 1fr))",
+                    minWidth: "min-content",
+                  }}
+                >
+                  {(() => {
+                    const nowLocalMs =
+                      Date.now() + (data.utcOffsetSeconds ?? 0) * 1000;
+                    const nowLocal = new Date(nowLocalMs);
+                    const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+                    const todayIdx = Math.max(
+                      0,
+                      data.dailyDates.findIndex((d) => d === todayStr),
+                    );
+                    return data.dailyDates
+                      .slice(todayIdx, todayIdx + 7)
+                      .map((date, j) => {
+                        const i = todayIdx + j;
+                        const isToday = date === todayStr;
+                        return (
+                          <ForecastCard
+                            key={date}
+                            date={date}
+                            waveMax={data.dailyWaveMax[i] ?? 1}
+                            waveDir={data.dailyWaveDir[i] ?? 270}
+                            windSpeed={data.dailyWindSpeed[i] ?? 15}
+                            swellPeriod={data.dailySwellPeriod[i] ?? 0}
+                            index={j}
+                            displayHeight={displayHeight}
+                            heightLabel={heightLabel}
+                            displaySpeed={displaySpeed}
+                            speedLabel={speedLabel}
+                            isSelected={
+                              isToday ? !selectedDay : selectedDay === date
                             }
-                          }}
-                        />
-                      );
-                    });
-                })()}
+                            onClick={() => {
+                              if (isToday) setSelectedDay(null);
+                              else setSelectedDay(date);
+                            }}
+                          />
+                        );
+                      });
+                  })()}
+                </div>
               </div>
             </div>
-          </div>
-        );
-      // New tiles
-      case "windGust":
-        return data.windGust !== undefined ? (
-          <StatCard
-            label="Wind Gusts"
-            value={displaySpeed(data.windGust)}
-            unit={speedLabel}
-            status={windStatus(data.windGust)}
-            icon={<Zap size={14} />}
-            decimals={1}
-          />
-        ) : null;
-      case "windSpeed80m":
-        return data.windSpeed80m !== undefined ? (
-          <StatCard
-            label="Wind at 80m"
-            value={displaySpeed(data.windSpeed80m)}
-            unit={speedLabel}
-            status={windStatus(data.windSpeed80m)}
-            icon={<Wind size={14} />}
-            decimals={1}
-          />
-        ) : null;
-      case "pressure":
-        return data.pressure !== undefined ? (
-          <StatCard
-            label="Pressure"
-            value={data.pressure}
-            unit="hPa"
-            status="average"
-            icon={<Gauge size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "visibility":
-        return data.visibility !== undefined ? (
-          <StatCard
-            label="Visibility"
-            value={data.visibility / 1000}
-            unit="km"
-            status="good"
-            icon={<Eye size={14} />}
-            decimals={1}
-          />
-        ) : null;
-      case "humidity":
-        return data.humidity !== undefined ? (
-          <StatCard
-            label="Humidity"
-            value={data.humidity}
-            unit="%"
-            status="average"
-            icon={<Droplets size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "dewPoint":
-        return data.dewPoint !== undefined ? (
-          <StatCard
-            label="Dew Point"
-            value={displayTemp(data.dewPoint)}
-            unit={tempLabel}
-            status={tempStatus(data.dewPoint)}
-            icon={<Droplets size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "uvIndex":
-        return data.uvIndex !== undefined ? (
-          <StatCard
-            label="UV Index"
-            value={data.uvIndex}
-            unit=""
-            status={
-              data.uvIndex > 7 ? "poor" : data.uvIndex > 3 ? "average" : "good"
-            }
-            icon={<Sun size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "cloudCover":
-        return data.cloudCover !== undefined ? (
-          <StatCard
-            label="Cloud Cover"
-            value={data.cloudCover}
-            unit="%"
-            status="average"
-            icon={<Cloud size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "precipitation":
-        return data.precipitation !== undefined ? (
-          <StatCard
-            label="Rain Chance"
-            value={data.precipitation}
-            unit="%"
-            status={
-              data.precipitation > 70
-                ? "poor"
-                : data.precipitation > 30
-                  ? "average"
-                  : "good"
-            }
-            icon={<Droplets size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "swellHeight":
-        return data.swellHeight !== undefined ? (
-          <StatCard
-            label="Swell Height"
-            value={displayHeight(data.swellHeight)}
-            unit={heightLabel}
-            status={waveStatus(data.swellHeight)}
-            icon={<Waves size={14} />}
-            decimals={1}
-          />
-        ) : null;
-      case "swellPeriod2":
-        return data.swellPeriod2 !== undefined ? (
-          <StatCard
-            label="Swell Period"
-            value={data.swellPeriod2}
-            unit="s"
-            status="good"
-            icon={<Waves size={14} />}
-            decimals={0}
-            yellowValue
-          />
-        ) : null;
-      case "windWaveHeight":
-        return data.windWaveHeight !== undefined ? (
-          <StatCard
-            label="Wind Wave Ht"
-            value={displayHeight(data.windWaveHeight)}
-            unit={heightLabel}
-            status={waveStatus(data.windWaveHeight)}
-            icon={<Waves size={14} />}
-            decimals={1}
-          />
-        ) : null;
-      case "windWavePeriod":
-        return data.windWavePeriod !== undefined ? (
-          <StatCard
-            label="Wind Wave Per"
-            value={data.windWavePeriod}
-            unit="s"
-            status="average"
-            icon={<Waves size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "seaTemp":
-        return data.seaTemp !== undefined ? (
-          <StatCard
-            label="Sea Temp"
-            value={displayTemp(data.seaTemp)}
-            unit={tempLabel}
-            status={tempStatus(data.seaTemp)}
-            icon={<Thermometer size={14} />}
-            decimals={0}
-          />
-        ) : null;
-      case "sunrise":
-        return data.sunrise ? (
-          <TimeCard
-            label="Sunrise"
-            value={data.sunrise}
-            icon={<Sunrise size={14} />}
-          />
-        ) : null;
-      case "sunset":
-        return data.sunset ? (
-          <TimeCard
-            label="Sunset"
-            value={data.sunset}
-            icon={<Sunset size={14} />}
-          />
-        ) : null;
-      default:
-        return null;
-    }
-  };
+          );
+        case "windGust":
+          return data.windGust !== undefined ? (
+            <StatCard
+              label="Wind Gusts"
+              value={displaySpeed(data.windGust)}
+              unit={speedLabel}
+              status={windStatus(data.windGust)}
+              icon={<Zap size={14} />}
+              decimals={1}
+            />
+          ) : null;
+        case "windSpeed80m":
+          return data.windSpeed80m !== undefined ? (
+            <StatCard
+              label="Wind at 80m"
+              value={displaySpeed(data.windSpeed80m)}
+              unit={speedLabel}
+              status={windStatus(data.windSpeed80m)}
+              icon={<Wind size={14} />}
+              decimals={1}
+            />
+          ) : null;
+        case "pressure":
+          return data.pressure !== undefined ? (
+            <StatCard
+              label="Pressure"
+              value={displayPressure(data.pressure)}
+              unit={pressureLabel}
+              status="average"
+              icon={<Gauge size={14} />}
+              decimals={pressureDecimals}
+            />
+          ) : null;
+        case "visibility":
+          return data.visibility !== undefined ? (
+            <StatCard
+              label="Visibility"
+              value={displayDistance(data.visibility)}
+              unit={distanceLabel}
+              status="good"
+              icon={<Eye size={14} />}
+              decimals={1}
+            />
+          ) : null;
+        case "humidity":
+          return data.humidity !== undefined ? (
+            <StatCard
+              label="Humidity"
+              value={data.humidity}
+              unit="%"
+              status="average"
+              icon={<Droplets size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "dewPoint":
+          return data.dewPoint !== undefined ? (
+            <StatCard
+              label="Dew Point"
+              value={displayTemp(data.dewPoint)}
+              unit={tempLabel}
+              status={tempStatus(data.dewPoint)}
+              icon={<Droplets size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "uvIndex":
+          return data.uvIndex !== undefined ? (
+            <StatCard
+              label="UV Index"
+              value={data.uvIndex}
+              unit=""
+              status={
+                data.uvIndex > 7
+                  ? "poor"
+                  : data.uvIndex > 3
+                    ? "average"
+                    : "good"
+              }
+              icon={<Sun size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "cloudCover":
+          return data.cloudCover !== undefined ? (
+            <StatCard
+              label="Cloud Cover"
+              value={data.cloudCover}
+              unit="%"
+              status="average"
+              icon={<Cloud size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "precipitation":
+          return data.precipitation !== undefined ? (
+            <StatCard
+              label="Rain Chance"
+              value={data.precipitation}
+              unit="%"
+              status={
+                data.precipitation > 70
+                  ? "poor"
+                  : data.precipitation > 30
+                    ? "average"
+                    : "good"
+              }
+              icon={<Droplets size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "swellHeight":
+          return data.swellHeight !== undefined ? (
+            <StatCard
+              label="Swell Height"
+              value={displayHeight(data.swellHeight)}
+              unit={heightLabel}
+              status={waveStatus(data.swellHeight)}
+              icon={<Waves size={14} />}
+              decimals={1}
+            />
+          ) : null;
+        case "swellPeriod2":
+          return data.swellPeriod2 !== undefined ? (
+            <StatCard
+              label="Swell Period"
+              value={data.swellPeriod2}
+              unit="s"
+              status="good"
+              icon={<Waves size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "windWaveHeight":
+          return data.windWaveHeight !== undefined ? (
+            <StatCard
+              label="Wind Wave Ht"
+              value={displayHeight(data.windWaveHeight)}
+              unit={heightLabel}
+              status={waveStatus(data.windWaveHeight)}
+              icon={<Waves size={14} />}
+              decimals={1}
+            />
+          ) : null;
+        case "windWavePeriod":
+          return data.windWavePeriod !== undefined ? (
+            <StatCard
+              label="Wind Wave Per"
+              value={data.windWavePeriod}
+              unit="s"
+              status="average"
+              icon={<Waves size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "seaTemp":
+          return data.seaTemp !== undefined ? (
+            <StatCard
+              label="Sea Temp"
+              value={displayTemp(data.seaTemp)}
+              unit={tempLabel}
+              status={tempStatus(data.seaTemp)}
+              icon={<Thermometer size={14} />}
+              decimals={0}
+            />
+          ) : null;
+        case "sunrise":
+          return data.sunrise ? (
+            <TimeCard
+              label="Sunrise"
+              value={data.sunrise}
+              icon={<Sunrise size={14} />}
+            />
+          ) : null;
+        case "sunset":
+          return data.sunset ? (
+            <TimeCard
+              label="Sunset"
+              value={data.sunset}
+              icon={<Sunset size={14} />}
+            />
+          ) : null;
+        default:
+          return null;
+      }
+    },
+    [
+      data,
+      effective,
+      selectedDay,
+      displayHeight,
+      heightLabel,
+      displayTemp,
+      tempLabel,
+      displaySpeed,
+      speedLabel,
+      displayPressure,
+      pressureLabel,
+      pressureDecimals,
+      displayDistance,
+      distanceLabel,
+    ],
+  );
+
+  // Unit selector button style helper
+  const unitBtnStyle = (active: boolean) =>
+    active
+      ? {
+          background: "var(--color-electric)",
+          color: "var(--color-bg)",
+          border: "1px solid var(--color-electric)",
+        }
+      : {
+          background: "rgba(13,79,110,0.2)",
+          color: "var(--color-seafoam)",
+          border: "1px solid rgba(13,79,110,0.4)",
+          opacity: 0.7,
+        };
 
   return (
     <div
-      className="relative min-h-screen"
+      className="relative min-h-screen flex flex-col"
       style={{
         background: "var(--color-bg)",
         fontFamily: "'General Sans', sans-serif",
@@ -2366,9 +2595,9 @@ export default function App() {
         windSpeed={data?.windSpeed ?? 10}
         rating={overallRating}
       />
-      <div className="relative" style={{ zIndex: 1 }}>
+      <div className="relative flex flex-col flex-1" style={{ zIndex: 1 }}>
         {/* HEADER */}
-        <header className="px-6 md:px-12 pt-8 pb-2">
+        <header className="px-6 md:px-12 pt-8 pb-2 flex-shrink-0">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <button
               type="button"
@@ -2378,7 +2607,7 @@ export default function App() {
               aria-label="Refresh app"
             >
               <img
-                src="/assets/generated/swell-icon-wave.dim_512x512.png"
+                src="/assets/generated/swell-icon-wave-transparent.dim_512x512.png"
                 alt=""
                 className="w-10 h-10 object-contain"
                 aria-hidden="true"
@@ -2473,13 +2702,13 @@ export default function App() {
 
               <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
 
-              {/* Saved Spots */}
+              {/* Saved Locations */}
               <div className="space-y-3">
                 <p
                   className="font-body text-xs tracking-widest uppercase font-semibold"
                   style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
                 >
-                  Your Saved Spots
+                  Your Saved Locations
                 </p>
                 <button
                   type="button"
@@ -2561,20 +2790,7 @@ export default function App() {
                       type="button"
                       onClick={() => setUnits({ ...units, height: opt })}
                       className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
-                      style={
-                        units.height === opt
-                          ? {
-                              background: "var(--color-electric)",
-                              color: "var(--color-bg)",
-                              border: "1px solid var(--color-electric)",
-                            }
-                          : {
-                              background: "rgba(13,79,110,0.2)",
-                              color: "var(--color-seafoam)",
-                              border: "1px solid rgba(13,79,110,0.4)",
-                              opacity: 0.7,
-                            }
-                      }
+                      style={unitBtnStyle(units.height === opt)}
                     >
                       {opt === "ft" ? "Feet" : "Meters"}
                     </button>
@@ -2597,20 +2813,7 @@ export default function App() {
                       type="button"
                       onClick={() => setUnits({ ...units, temp: opt })}
                       className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
-                      style={
-                        units.temp === opt
-                          ? {
-                              background: "var(--color-electric)",
-                              color: "var(--color-bg)",
-                              border: "1px solid var(--color-electric)",
-                            }
-                          : {
-                              background: "rgba(13,79,110,0.2)",
-                              color: "var(--color-seafoam)",
-                              border: "1px solid rgba(13,79,110,0.4)",
-                              opacity: 0.7,
-                            }
-                      }
+                      style={unitBtnStyle(units.temp === opt)}
                     >
                       {opt === "F" ? "°F" : "°C"}
                     </button>
@@ -2633,20 +2836,7 @@ export default function App() {
                       type="button"
                       onClick={() => setUnits({ ...units, speed: opt })}
                       className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
-                      style={
-                        units.speed === opt
-                          ? {
-                              background: "var(--color-electric)",
-                              color: "var(--color-bg)",
-                              border: "1px solid var(--color-electric)",
-                            }
-                          : {
-                              background: "rgba(13,79,110,0.2)",
-                              color: "var(--color-seafoam)",
-                              border: "1px solid rgba(13,79,110,0.4)",
-                              opacity: 0.7,
-                            }
-                      }
+                      style={unitBtnStyle(units.speed === opt)}
                     >
                       {opt === "kts" ? "Knots" : opt === "mph" ? "MPH" : "KM/H"}
                     </button>
@@ -2654,10 +2844,56 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Pressure */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Pressure
+                </p>
+                <div className="flex gap-2">
+                  {(["hPa", "inHg", "mmHg"] as PressureUnit[]).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setUnits({ ...units, pressure: opt })}
+                      className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
+                      style={unitBtnStyle(units.pressure === opt)}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Distance */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Distance
+                </p>
+                <div className="flex gap-2">
+                  {(["Nm", "Miles", "Km"] as DistanceUnit[]).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setUnits({ ...units, distance: opt })}
+                      className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
+                      style={unitBtnStyle(units.distance === opt)}
+                    >
+                      {opt === "Nm" ? "Nm" : opt === "Miles" ? "Miles" : "Km"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
 
-              {/* Available Tiles */}
-              <div className="space-y-3">
+              {/* Available Tiles — grouped */}
+              <div className="space-y-4">
                 <p
                   className="font-body text-xs tracking-widest uppercase font-semibold"
                   style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
@@ -2676,84 +2912,96 @@ export default function App() {
                     Minimum 2 tiles must remain active.
                   </div>
                 )}
-                <div className="space-y-1">
-                  {ALL_TILE_IDS.map((id) => {
-                    const isActive = tileOrder.includes(id);
-                    const catalog = TILE_CATALOG[id];
-                    return (
-                      <div
-                        key={id}
-                        className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-                        style={{
-                          background: "rgba(13,79,110,0.15)",
-                          border: "1px solid rgba(13,79,110,0.3)",
-                        }}
-                      >
-                        <span className="flex-1 font-body text-sm text-white truncate">
-                          {catalog.label}
-                        </span>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:scale-110"
+                {TILE_GROUPS.map((group) => (
+                  <div key={group.label} className="space-y-1">
+                    <p
+                      className="font-body text-xs tracking-widest uppercase font-semibold px-1 pb-1"
+                      style={{
+                        color: "var(--color-electric)",
+                        opacity: 0.7,
+                        fontSize: "0.65rem",
+                      }}
+                    >
+                      {group.label}
+                    </p>
+                    {group.ids.map((id) => {
+                      const isActive = tileOrder.includes(id);
+                      const catalog = TILE_CATALOG[id];
+                      return (
+                        <div
+                          key={id}
+                          className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                          style={{
+                            background: "rgba(13,79,110,0.15)",
+                            border: "1px solid rgba(13,79,110,0.3)",
+                          }}
+                        >
+                          <span className="flex-1 font-body text-sm text-white truncate">
+                            {catalog.label}
+                          </span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:scale-110"
+                                style={{
+                                  background: "rgba(0,180,216,0.12)",
+                                  border: "1px solid rgba(0,180,216,0.3)",
+                                  color: "var(--color-electric)",
+                                }}
+                                aria-label={`Info about ${catalog.label}`}
+                              >
+                                <Info size={11} />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              side="left"
+                              className="w-64 border-0 p-0 rounded-xl"
                               style={{
-                                background: "rgba(0,180,216,0.12)",
-                                border: "1px solid rgba(0,180,216,0.3)",
-                                color: "var(--color-electric)",
+                                background:
+                                  "linear-gradient(145deg, rgba(13,30,52,0.98), rgba(2,13,24,0.99))",
+                                border: "1px solid rgba(13,79,110,0.6)",
+                                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                               }}
-                              aria-label={`Info about ${catalog.label}`}
                             >
-                              <Info size={11} />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            side="left"
-                            className="w-64 border-0 p-0 rounded-xl"
-                            style={{
-                              background:
-                                "linear-gradient(145deg, rgba(13,30,52,0.98), rgba(2,13,24,0.99))",
-                              border: "1px solid rgba(13,79,110,0.6)",
-                              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                            }}
-                          >
-                            <div className="px-4 py-3">
-                              <p
-                                className="font-body font-bold text-sm mb-1"
-                                style={{ color: "var(--color-electric)" }}
-                              >
-                                {catalog.label}
-                              </p>
-                              <p
-                                className="font-body text-xs leading-relaxed"
-                                style={{ color: "rgba(168,216,200,0.85)" }}
-                              >
-                                {catalog.description}
-                              </p>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                        <Switch
-                          checked={isActive}
-                          onCheckedChange={() => toggleTile(id)}
-                          aria-label={`Toggle ${catalog.label} tile`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+                              <div className="px-4 py-3">
+                                <p
+                                  className="font-body font-bold text-sm mb-1"
+                                  style={{ color: "var(--color-electric)" }}
+                                >
+                                  {catalog.label}
+                                </p>
+                                <p
+                                  className="font-body text-xs leading-relaxed"
+                                  style={{ color: "rgba(168,216,200,0.85)" }}
+                                >
+                                  {catalog.description}
+                                </p>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={() => toggleTile(id)}
+                            aria-label={`Toggle ${catalog.label} tile`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           </SheetContent>
         </Sheet>
 
-        {/* HERO */}
+        {/* HERO — flex layout so search/footer don't overlap on mobile portrait */}
         {!selectedSpot && (
           <section
-            className="px-6 md:px-12 pt-10 pb-8"
+            className="flex flex-col flex-1 px-6 md:px-12 pt-10"
             data-ocid="hero.section"
           >
-            <div className="max-w-7xl mx-auto">
+            <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col">
               <h1
                 className="font-display font-black text-white leading-none mb-8 whitespace-nowrap"
                 style={{
@@ -2763,6 +3011,7 @@ export default function App() {
               >
                 Favorite Mother-In-Law's Ocean
               </h1>
+              <div className="flex-1" />
             </div>
           </section>
         )}
@@ -2791,95 +3040,83 @@ export default function App() {
                 </div>
               )}
               {data && !loading && (
-                <>
-                  {/* TODAY'S / SELECTED DAY CONDITIONS */}
-                  <section data-ocid="conditions.section">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3
-                        className="font-body text-xs tracking-widest uppercase font-semibold"
-                        style={{ color: "var(--color-seafoam)", opacity: 0.7 }}
-                      >
-                        {sectionTitle}
-                      </h3>
-                      {selectedDay && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDay(null)}
-                          className="flex items-center gap-1 rounded-full px-3 py-1.5 font-body text-xs font-semibold transition-all hover:scale-105"
-                          style={{
-                            background: "rgba(0,180,216,0.12)",
-                            border: "1px solid rgba(0,180,216,0.4)",
-                            color: "var(--color-electric)",
-                          }}
-                        >
-                          <ArrowLeft size={11} />
-                          Today
-                        </button>
-                      )}
-                    </div>
-                    <div
-                      ref={conditionGridRef}
-                      className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
+                <section data-ocid="conditions.section">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3
+                      className="font-body text-xs tracking-widest uppercase font-semibold"
+                      style={{ color: "var(--color-seafoam)", opacity: 0.7 }}
                     >
-                      {tileOrder.map((tileId, idx) => {
-                        const isWide =
-                          tileId === "tide" || tileId === "forecast";
-                        const tileContent = renderTile(tileId);
-                        if (!tileContent) return null;
-                        return (
-                          <div
-                            key={tileId}
-                            {...getTileHandlers(idx)}
-                            className={isWide ? "col-span-2 md:col-span-5" : ""}
-                            style={{
-                              cursor: dragEnabled
-                                ? activeTileIndex === idx
-                                  ? "grabbing"
-                                  : "grab"
-                                : "default",
-                              opacity: activeTileIndex === idx ? 0.5 : 1,
-                              outline:
-                                overTileIndex === idx && activeTileIndex !== idx
-                                  ? "2px solid var(--color-electric)"
-                                  : "none",
-                              outlineOffset: "2px",
-                              borderRadius: "12px",
-                              transition:
-                                "opacity 0.15s ease, outline 0.15s ease",
-                              touchAction: dragEnabled ? "none" : "auto",
-                            }}
-                            data-ocid={`conditions.item.${idx + 1}`}
-                          >
-                            {tileContent}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {dragEnabled && (
-                      <p
-                        className="text-xs mt-2 text-center"
-                        style={{ color: "rgba(168,216,200,0.35)" }}
+                      {sectionTitle}
+                    </h3>
+                    {selectedDay && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDay(null)}
+                        className="flex items-center gap-1 rounded-full px-3 py-1.5 font-body text-xs font-semibold transition-all hover:scale-105"
+                        style={{
+                          background: "rgba(0,180,216,0.12)",
+                          border: "1px solid rgba(0,180,216,0.4)",
+                          color: "var(--color-electric)",
+                        }}
                       >
-                        Drag tiles to reorder
-                      </p>
+                        <ArrowLeft size={11} />
+                        Today
+                      </button>
                     )}
-                  </section>
-                </>
+                  </div>
+                  <div
+                    ref={conditionGridRef}
+                    className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4"
+                  >
+                    {tileOrder.map((tileId, idx) => {
+                      const isWide = tileId === "tide" || tileId === "forecast";
+                      const tileContent = renderTile(tileId);
+                      if (!tileContent) return null;
+                      return (
+                        <div
+                          key={tileId}
+                          {...getTileHandlers(idx)}
+                          className={isWide ? "col-span-2 md:col-span-5" : ""}
+                          style={{
+                            cursor: dragEnabled
+                              ? activeTileIndex === idx
+                                ? "grabbing"
+                                : "grab"
+                              : "default",
+                            opacity: activeTileIndex === idx ? 0.5 : 1,
+                            outline:
+                              overTileIndex === idx && activeTileIndex !== idx
+                                ? "2px solid var(--color-electric)"
+                                : "none",
+                            outlineOffset: "2px",
+                            borderRadius: "12px",
+                            transition:
+                              "opacity 0.15s ease, outline 0.15s ease",
+                            touchAction: dragEnabled ? "none" : "auto",
+                          }}
+                          data-ocid={`conditions.item.${idx + 1}`}
+                        >
+                          {tileContent}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {dragEnabled && (
+                    <p
+                      className="text-xs mt-2 text-center"
+                      style={{ color: "rgba(168,216,200,0.35)" }}
+                    >
+                      Drag tiles to reorder
+                    </p>
+                  )}
+                </section>
               )}
             </div>
           </main>
         )}
 
-        {/* SEARCH BAR */}
-        <div
-          className="px-6 md:px-12 pb-6"
-          style={{
-            position: selectedSpot ? "relative" : "absolute",
-            bottom: selectedSpot ? undefined : "2rem",
-            left: selectedSpot ? undefined : 0,
-            right: selectedSpot ? undefined : 0,
-          }}
-        >
+        {/* SEARCH BAR — always in flow, no absolute positioning */}
+        <div className="px-6 md:px-12 pb-6 flex-shrink-0 mt-auto">
           <div className="max-w-7xl mx-auto">
             <div
               className="flex items-center gap-3 rounded-2xl px-4 py-3"
@@ -2897,14 +3134,24 @@ export default function App() {
                   flexShrink: 0,
                 }}
               />
-              <SearchInput onSelect={loadSpot} />
+              <SearchInput
+                onSelect={loadSpot}
+                onSaveToPreset={(spot) => {
+                  const emptyIdx = presets.findIndex((p) => p === null);
+                  if (emptyIdx !== -1) {
+                    const next = [...presets];
+                    next[emptyIdx] = spot;
+                    setPresetsState(next);
+                  }
+                }}
+              />
             </div>
           </div>
         </div>
 
         {/* FOOTER */}
         <footer
-          className="px-6 md:px-12 py-8 mt-auto"
+          className="px-6 md:px-12 py-8 flex-shrink-0"
           style={{ borderTop: "1px solid rgba(13,79,110,0.3)" }}
         >
           <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
@@ -2920,7 +3167,7 @@ export default function App() {
             >
               © {new Date().getFullYear()}. Built with ❤ using{" "}
               <a
-                href="https://caffeine.ai"
+                href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
                 className="underline hover:opacity-80"
                 style={{ color: "var(--color-electric)" }}
               >
@@ -2935,11 +3182,18 @@ export default function App() {
 }
 
 // ─── SearchInput ──────────────────────────────────────────────────────────────
-function SearchInput({ onSelect }: { onSelect: (spot: Spot) => void }) {
+function SearchInput({
+  onSelect,
+  onSaveToPreset,
+}: {
+  onSelect: (spot: Spot) => void;
+  onSaveToPreset: (spot: Spot) => void;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeoResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [open, setOpen] = useState(false);
+  const [savedIdx, setSavedIdx] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -2972,10 +3226,14 @@ function SearchInput({ onSelect }: { onSelect: (spot: Spot) => void }) {
       <input
         type="text"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search any surf or sailing spot worldwide…"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setSavedIdx(null);
+        }}
+        placeholder="Search any location"
         className="w-full bg-transparent outline-none font-body text-sm text-white placeholder:opacity-40"
-        aria-label="Search for a surf spot"
+        aria-label="Search for a location"
+        data-ocid="search.input"
       />
       {searching && (
         <div
@@ -2998,31 +3256,34 @@ function SearchInput({ onSelect }: { onSelect: (spot: Spot) => void }) {
           }}
         >
           {results.slice(0, 6).map((result, i) => (
-            <button
-              type="button"
+            <div
               key={`${result.name}-${result.latitude}-${result.longitude}`}
-              onClick={() => {
-                onSelect(geoToSpot(result));
-                setQuery("");
-                setOpen(false);
-              }}
-              className="w-full text-left flex items-center gap-3 px-4 py-3 transition-all duration-150"
+              className="flex items-center gap-2 px-4 py-3 transition-all duration-150"
               style={{
                 borderTop: i > 0 ? "1px solid rgba(13,79,110,0.3)" : "none",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "rgba(13,79,110,0.3)";
+                (e.currentTarget as HTMLDivElement).style.background =
+                  "rgba(13,79,110,0.25)";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = "";
+                (e.currentTarget as HTMLDivElement).style.background = "";
               }}
             >
               <Waves
                 size={12}
                 style={{ color: "var(--color-electric)", flexShrink: 0 }}
               />
-              <div className="flex-1 min-w-0">
+              <button
+                type="button"
+                className="flex-1 min-w-0 text-left"
+                onClick={() => {
+                  onSelect(geoToSpot(result));
+                  setQuery("");
+                  setOpen(false);
+                  setSavedIdx(null);
+                }}
+              >
                 <div className="font-body font-semibold text-white text-sm truncate">
                   {result.name}
                 </div>
@@ -3033,8 +3294,34 @@ function SearchInput({ onSelect }: { onSelect: (spot: Spot) => void }) {
                   {result.admin1 ? `${result.admin1}, ` : ""}
                   {result.country}
                 </div>
-              </div>
-            </button>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSaveToPreset(geoToSpot(result));
+                  setSavedIdx(i);
+                }}
+                className="flex-shrink-0 rounded-full px-2 py-1 font-body text-xs font-semibold transition-all hover:scale-105"
+                style={
+                  savedIdx === i
+                    ? {
+                        background: "rgba(34,197,94,0.15)",
+                        border: "1px solid rgba(34,197,94,0.5)",
+                        color: "#22c55e",
+                      }
+                    : {
+                        background: "rgba(0,180,216,0.1)",
+                        border: "1px solid rgba(0,180,216,0.35)",
+                        color: "var(--color-electric)",
+                      }
+                }
+                aria-label={`Save ${result.name} to locations`}
+                data-ocid={`search.save_button.${i + 1}`}
+              >
+                {savedIdx === i ? "✓ Saved" : "+ Save"}
+              </button>
+            </div>
           ))}
         </div>
       )}

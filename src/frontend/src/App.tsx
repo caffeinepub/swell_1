@@ -2209,69 +2209,108 @@ export default function App() {
     : "TODAY'S CONDITIONS";
 
   // Render a single condition tile
+  // NOTE: Never return null for a known tileId — always render with unavailable={true}
+  // when data isn't ready, so newly-added tiles appear immediately as placeholders.
   const renderTile = useCallback(
     (tileId: TileId) => {
-      if (!data || !effective) return null;
+      const noData = !data || !effective;
       const isSelectedDayMode = !!selectedDay;
       switch (tileId) {
         case "wave":
           return (
             <StatCard
               label="Wave Height"
-              value={displayHeight(effective.waveHeight)}
+              value={noData ? 0 : displayHeight(effective.waveHeight)}
               unit={heightLabel}
-              status={waveStatus(effective.waveHeight)}
+              status={noData ? "average" : waveStatus(effective.waveHeight)}
               icon={<Waves size={14} />}
               decimals={1}
+              unavailable={noData}
             />
           );
         case "wind":
           return (
             <StatCard
               label="Wind Speed"
-              value={displaySpeed(effective.windSpeed)}
+              value={noData ? 0 : displaySpeed(effective.windSpeed)}
               unit={speedLabel}
-              status={windStatus(effective.windSpeed)}
+              status={noData ? "average" : windStatus(effective.windSpeed)}
               icon={<Wind size={14} />}
               decimals={1}
+              unavailable={noData}
             />
           );
         case "direction":
+          if (noData) {
+            return (
+              <StatCard
+                label="Wind Direction"
+                value={0}
+                unit=""
+                status="average"
+                icon={<Wind size={14} />}
+                decimals={0}
+                unavailable={true}
+              />
+            );
+          }
           return <CompassCard degrees={effective.windDirection} />;
         case "waterTemp":
           return (
             <StatCard
               label={isSelectedDayMode ? "Water Temp (now)" : "Water Temp"}
-              value={displayTemp(data.waterTemp)}
+              value={noData ? 0 : displayTemp(data.waterTemp)}
               unit={tempLabel}
-              status={tempStatus(data.waterTemp)}
+              status={noData ? "average" : tempStatus(data.waterTemp)}
               icon={<Thermometer size={14} />}
               decimals={0}
+              unavailable={noData}
             />
           );
         case "airTemp":
           return (
             <StatCard
               label={isSelectedDayMode ? "Air Temp (now)" : "Air Temp"}
-              value={displayTemp(data.airTemp)}
+              value={noData ? 0 : displayTemp(data.airTemp)}
               unit={tempLabel}
-              status={tempStatus(data.airTemp)}
+              status={noData ? "average" : tempStatus(data.airTemp)}
               icon={<Thermometer size={14} />}
               decimals={0}
+              unavailable={noData}
             />
           );
         case "period":
           return (
             <StatCard
               label="WAVE PERIOD"
-              value={effective.swellPeriod}
+              value={noData ? 0 : effective.swellPeriod}
               unit="s"
               status="good"
               icon={<Waves size={14} />}
               decimals={0}
+              unavailable={noData}
             />
           );
         case "tide":
+          if (noData) {
+            return (
+              <div
+                className="w-full overflow-hidden rounded-xl flex items-center justify-center"
+                style={{
+                  border: "1px solid rgba(13,79,110,0.5)",
+                  background: "rgba(2,13,24,0.8)",
+                  minHeight: 120,
+                }}
+              >
+                <p
+                  className="font-body text-sm text-center px-6 py-8"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.4 }}
+                >
+                  —
+                </p>
+              </div>
+            );
+          }
           if (isSelectedDayMode) {
             return (
               <div
@@ -2300,6 +2339,35 @@ export default function App() {
             />
           );
         case "forecast":
+          if (noData) {
+            return (
+              <div
+                className="w-full overflow-hidden rounded-xl"
+                style={{
+                  border: "1px solid rgba(13,79,110,0.5)",
+                  background: "rgba(2,13,24,0.8)",
+                  minHeight: 120,
+                }}
+              >
+                <div className="px-6 pt-5 pb-2">
+                  <h3
+                    className="font-body text-xs tracking-widest uppercase font-semibold"
+                    style={{ color: "var(--color-seafoam)", opacity: 0.8 }}
+                  >
+                    7-Day Forecast
+                  </h3>
+                </div>
+                <div
+                  className="px-6 pb-8 flex items-center justify-center"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.4 }}
+                >
+                  <span className="font-display font-extrabold text-4xl">
+                    —
+                  </span>
+                </div>
+              </div>
+            );
+          }
           return (
             <div
               className="w-full overflow-hidden rounded-xl"
@@ -2370,76 +2438,76 @@ export default function App() {
           return (
             <StatCard
               label="Wind Gusts"
-              value={displaySpeed(data.windGust ?? 0)}
+              value={noData ? 0 : displaySpeed(data.windGust ?? 0)}
               unit={speedLabel}
-              status={windStatus(data.windGust ?? 0)}
+              status={noData ? "average" : windStatus(data.windGust ?? 0)}
               icon={<Zap size={14} />}
               decimals={1}
-              unavailable={data.windGust === undefined}
+              unavailable={noData || data.windGust === undefined}
             />
           );
         case "windSpeed80m":
           return (
             <StatCard
               label="Wind at 80m"
-              value={displaySpeed(data.windSpeed80m ?? 0)}
+              value={noData ? 0 : displaySpeed(data.windSpeed80m ?? 0)}
               unit={speedLabel}
-              status={windStatus(data.windSpeed80m ?? 0)}
+              status={noData ? "average" : windStatus(data.windSpeed80m ?? 0)}
               icon={<Wind size={14} />}
               decimals={1}
-              unavailable={data.windSpeed80m === undefined}
+              unavailable={noData || data.windSpeed80m === undefined}
             />
           );
         case "pressure":
           return (
             <StatCard
               label="Pressure"
-              value={displayPressure(data.pressure ?? 0)}
+              value={noData ? 0 : displayPressure(data.pressure ?? 0)}
               unit={pressureLabel}
               status="average"
               icon={<Gauge size={14} />}
               decimals={pressureDecimals}
-              unavailable={data.pressure === undefined}
+              unavailable={noData || data.pressure === undefined}
             />
           );
         case "visibility":
           return (
             <StatCard
               label="Visibility"
-              value={displayDistance(data.visibility ?? 0)}
+              value={noData ? 0 : displayDistance(data.visibility ?? 0)}
               unit={distanceLabel}
               status="good"
               icon={<Eye size={14} />}
               decimals={1}
-              unavailable={data.visibility === undefined}
+              unavailable={noData || data.visibility === undefined}
             />
           );
         case "humidity":
           return (
             <StatCard
               label="Humidity"
-              value={data.humidity ?? 0}
+              value={noData ? 0 : (data.humidity ?? 0)}
               unit="%"
               status="average"
               icon={<Droplets size={14} />}
               decimals={0}
-              unavailable={data.humidity === undefined}
+              unavailable={noData || data.humidity === undefined}
             />
           );
         case "dewPoint":
           return (
             <StatCard
               label="Dew Point"
-              value={displayTemp(data.dewPoint ?? 0)}
+              value={noData ? 0 : displayTemp(data.dewPoint ?? 0)}
               unit={tempLabel}
-              status={tempStatus(data.dewPoint ?? 0)}
+              status={noData ? "average" : tempStatus(data.dewPoint ?? 0)}
               icon={<Droplets size={14} />}
               decimals={0}
-              unavailable={data.dewPoint === undefined}
+              unavailable={noData || data.dewPoint === undefined}
             />
           );
         case "uvIndex": {
-          const uv = data.uvIndex ?? 0;
+          const uv = noData ? 0 : (data.uvIndex ?? 0);
           return (
             <StatCard
               label="UV Index"
@@ -2448,7 +2516,7 @@ export default function App() {
               status={uv > 7 ? "poor" : uv > 3 ? "average" : "good"}
               icon={<Sun size={14} />}
               decimals={0}
-              unavailable={data.uvIndex === undefined}
+              unavailable={noData || (!noData && data.uvIndex === undefined)}
             />
           );
         }
@@ -2456,16 +2524,16 @@ export default function App() {
           return (
             <StatCard
               label="Cloud Cover"
-              value={data.cloudCover ?? 0}
+              value={noData ? 0 : (data.cloudCover ?? 0)}
               unit="%"
               status="average"
               icon={<Cloud size={14} />}
               decimals={0}
-              unavailable={data.cloudCover === undefined}
+              unavailable={noData || data.cloudCover === undefined}
             />
           );
         case "precipitation": {
-          const precip = data.precipitation ?? 0;
+          const precip = noData ? 0 : (data.precipitation ?? 0);
           return (
             <StatCard
               label="Rain Chance"
@@ -2474,7 +2542,9 @@ export default function App() {
               status={precip > 70 ? "poor" : precip > 30 ? "average" : "good"}
               icon={<Droplets size={14} />}
               decimals={0}
-              unavailable={data.precipitation === undefined}
+              unavailable={
+                noData || (!noData && data.precipitation === undefined)
+              }
             />
           );
         }
@@ -2482,63 +2552,76 @@ export default function App() {
           return (
             <StatCard
               label="Swell Height"
-              value={displayHeight(data.swellHeight ?? 0)}
+              value={noData ? 0 : displayHeight(data.swellHeight ?? 0)}
               unit={heightLabel}
-              status={waveStatus(data.swellHeight ?? 0)}
+              status={noData ? "average" : waveStatus(data.swellHeight ?? 0)}
               icon={<Waves size={14} />}
               decimals={1}
-              unavailable={data.swellHeight === undefined}
+              unavailable={noData || data.swellHeight === undefined}
             />
           );
         case "swellPeriod2":
           return (
             <StatCard
               label="Swell Period"
-              value={data.swellPeriod2 ?? 0}
+              value={noData ? 0 : (data.swellPeriod2 ?? 0)}
               unit="s"
               status="good"
               icon={<Waves size={14} />}
               decimals={0}
-              unavailable={data.swellPeriod2 === undefined}
+              unavailable={noData || data.swellPeriod2 === undefined}
             />
           );
         case "windWaveHeight":
           return (
             <StatCard
               label="Wind Wave Ht"
-              value={displayHeight(data.windWaveHeight ?? 0)}
+              value={noData ? 0 : displayHeight(data.windWaveHeight ?? 0)}
               unit={heightLabel}
-              status={waveStatus(data.windWaveHeight ?? 0)}
+              status={noData ? "average" : waveStatus(data.windWaveHeight ?? 0)}
               icon={<Waves size={14} />}
               decimals={1}
-              unavailable={data.windWaveHeight === undefined}
+              unavailable={noData || data.windWaveHeight === undefined}
             />
           );
         case "windWavePeriod":
           return (
             <StatCard
               label="Wind Wave Per"
-              value={data.windWavePeriod ?? 0}
+              value={noData ? 0 : (data.windWavePeriod ?? 0)}
               unit="s"
               status="average"
               icon={<Waves size={14} />}
               decimals={0}
-              unavailable={data.windWavePeriod === undefined}
+              unavailable={noData || data.windWavePeriod === undefined}
             />
           );
         case "seaTemp":
           return (
             <StatCard
               label="Sea Temp"
-              value={displayTemp(data.seaTemp ?? 0)}
+              value={noData ? 0 : displayTemp(data.seaTemp ?? 0)}
               unit={tempLabel}
-              status={tempStatus(data.seaTemp ?? 0)}
+              status={noData ? "average" : tempStatus(data.seaTemp ?? 0)}
               icon={<Thermometer size={14} />}
               decimals={0}
-              unavailable={data.seaTemp === undefined}
+              unavailable={noData || data.seaTemp === undefined}
             />
           );
         case "sunrise":
+          if (noData) {
+            return (
+              <StatCard
+                label="Sunrise"
+                value={0}
+                unit=""
+                status="average"
+                icon={<Sunrise size={14} />}
+                decimals={0}
+                unavailable={true}
+              />
+            );
+          }
           return (
             <TimeCard
               label="Sunrise"
@@ -2547,6 +2630,19 @@ export default function App() {
             />
           );
         case "sunset":
+          if (noData) {
+            return (
+              <StatCard
+                label="Sunset"
+                value={0}
+                unit=""
+                status="average"
+                icon={<Sunset size={14} />}
+                decimals={0}
+                unavailable={true}
+              />
+            );
+          }
           return (
             <TimeCard
               label="Sunset"
@@ -3048,7 +3144,7 @@ export default function App() {
                   </p>
                 </div>
               )}
-              {data && !loading && (
+              {!loading && (
                 <section data-ocid="conditions.section">
                   <div className="flex items-center justify-between mb-4">
                     <h3
@@ -3080,7 +3176,8 @@ export default function App() {
                     {tileOrder.map((tileId, idx) => {
                       const isWide = tileId === "tide" || tileId === "forecast";
                       const tileContent = renderTile(tileId);
-                      if (!tileContent) return null;
+                      // Only skip unknown tile ids (renderTile returns null for default case)
+                      if (tileContent === null) return null;
                       return (
                         <div
                           key={tileId}

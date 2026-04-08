@@ -371,7 +371,28 @@ function fullDayName(dateStr: string): string {
 const PRESETS_KEY = "swell_presets";
 const UNITS_KEY = "swell_units";
 const DRAG_KEY = "swell_drag_enabled";
+const DENSITY_KEY = "swell_density";
 const LAST_SPOT_KEY = "swell_last_spot";
+
+type TileDensity = "compact" | "relaxed";
+
+function loadDensity(): TileDensity {
+  try {
+    const raw = localStorage.getItem(DENSITY_KEY);
+    if (raw === "relaxed") return "relaxed";
+    return "compact";
+  } catch {
+    return "compact";
+  }
+}
+
+function saveDensity(v: TileDensity): void {
+  try {
+    localStorage.setItem(DENSITY_KEY, v);
+  } catch {
+    /* ignore */
+  }
+}
 
 type HeightUnit = "ft" | "m";
 type TempUnit = "F" | "C";
@@ -1383,6 +1404,7 @@ const StatCard = memo(function StatCard({
   icon,
   decimals = 1,
   unavailable = false,
+  density = "compact",
 }: {
   label: string;
   value: number;
@@ -1391,12 +1413,17 @@ const StatCard = memo(function StatCard({
   icon: React.ReactNode;
   decimals?: number;
   unavailable?: boolean;
+  density?: TileDensity;
 }) {
   const countedStr = useCountUp(unavailable ? 0 : value, 1000, decimals);
   const color = STATUS_COLOR[status];
+  const valueFontSize =
+    density === "relaxed"
+      ? "clamp(2rem, 5.5vw, 3.6rem)"
+      : "clamp(1.8rem, 5vw, 3.2rem)";
   return (
     <div
-      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
+      className="relative flex flex-col items-center justify-center rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0 gap-1"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1412,7 +1439,8 @@ const StatCard = memo(function StatCard({
           opacity: unavailable ? 0 : 1,
         }}
       />
-      <div className="flex items-center gap-1.5 min-w-0 pr-5">
+      {/* Label — centered above value */}
+      <div className="flex items-center gap-1.5 min-w-0 px-5 justify-center">
         <span
           style={{ color: "var(--color-electric)" }}
           className="opacity-70 flex-shrink-0"
@@ -1430,11 +1458,12 @@ const StatCard = memo(function StatCard({
           {label}
         </span>
       </div>
-      <div className="flex items-baseline gap-1.5 leading-none min-w-0 mt-auto overflow-hidden">
+      {/* Value — centered below label */}
+      <div className="flex items-baseline gap-1.5 leading-none min-w-0">
         <span
-          className="font-display font-extrabold text-white truncate"
+          className="font-display font-extrabold text-white"
           style={{
-            fontSize: "clamp(1.5rem, 4.5vw, 3rem)",
+            fontSize: valueFontSize,
             lineHeight: 1,
             opacity: unavailable ? 0.35 : 1,
           }}
@@ -1462,10 +1491,20 @@ const TimeCard = memo(function TimeCard({
   label,
   value,
   icon,
-}: { label: string; value: string; icon: React.ReactNode }) {
+  density = "compact",
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  density?: TileDensity;
+}) {
+  const valueFontSize =
+    density === "relaxed"
+      ? "clamp(2rem, 5.5vw, 3.6rem)"
+      : "clamp(1.8rem, 5vw, 3.2rem)";
   return (
     <div
-      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
+      className="relative flex flex-col items-center justify-center rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0 gap-1"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1473,7 +1512,7 @@ const TimeCard = memo(function TimeCard({
         boxShadow: "0 4px 24px rgba(0,0,0,0.35)",
       }}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
+      <div className="flex items-center gap-1.5 min-w-0 justify-center">
         <span
           style={{ color: "var(--color-electric)" }}
           className="opacity-70 flex-shrink-0"
@@ -1491,24 +1530,27 @@ const TimeCard = memo(function TimeCard({
           {label}
         </span>
       </div>
-      <div className="flex items-baseline leading-none min-w-0 mt-auto overflow-hidden">
-        <span
-          className="font-display font-extrabold text-white truncate"
-          style={{ fontSize: "clamp(1.5rem, 4.5vw, 3rem)", lineHeight: 1 }}
-        >
-          {value}
-        </span>
-      </div>
+      <span
+        className="font-display font-extrabold text-white leading-none"
+        style={{ fontSize: valueFontSize, lineHeight: 1 }}
+      >
+        {value}
+      </span>
     </div>
   );
 });
 
 const CompassCard = memo(function CompassCard({
   degrees,
-}: { degrees: number }) {
+  density = "compact",
+}: { degrees: number; density?: TileDensity }) {
+  const valueFontSize =
+    density === "relaxed"
+      ? "clamp(2rem, 5.5vw, 3.6rem)"
+      : "clamp(1.8rem, 5vw, 3.2rem)";
   return (
     <div
-      className="relative flex flex-col justify-between rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0"
+      className="relative flex flex-col items-center justify-center rounded-xl p-3 sm:p-4 h-full overflow-hidden min-w-0 gap-1"
       style={{
         background:
           "linear-gradient(135deg, rgba(13,79,110,0.45) 0%, rgba(2,13,24,0.7) 100%)",
@@ -1523,7 +1565,7 @@ const CompassCard = memo(function CompassCard({
           boxShadow: `0 0 8px ${STATUS_COLOR.average}`,
         }}
       />
-      <div className="flex items-center gap-1.5 min-w-0 pr-5">
+      <div className="flex items-center gap-1.5 min-w-0 px-5 justify-center">
         <span
           style={{ color: "var(--color-electric)" }}
           className="opacity-70 flex-shrink-0"
@@ -1541,14 +1583,12 @@ const CompassCard = memo(function CompassCard({
           WIND DIRECTION
         </span>
       </div>
-      <div className="flex items-baseline leading-none min-w-0 mt-auto overflow-hidden">
-        <span
-          className="font-display font-extrabold text-white truncate"
-          style={{ fontSize: "clamp(1.5rem, 4.5vw, 3rem)", lineHeight: 1 }}
-        >
-          {degreesToCompass(degrees)}
-        </span>
-      </div>
+      <span
+        className="font-display font-extrabold text-white leading-none"
+        style={{ fontSize: valueFontSize, lineHeight: 1 }}
+      >
+        {degreesToCompass(degrees)}
+      </span>
     </div>
   );
 });
@@ -1955,8 +1995,8 @@ function LoadingSkeleton() {
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div
             key={i}
-            className="aspect-[4/3] rounded-xl"
-            style={{ background: "rgba(13,79,110,0.2)" }}
+            className="rounded-xl"
+            style={{ aspectRatio: "2/1", background: "rgba(13,79,110,0.2)" }}
           />
         ))}
       </div>
@@ -2014,6 +2054,9 @@ export default function App() {
   const [dragEnabled, setDragEnabledState] = useState<boolean>(() =>
     loadDragEnabled(),
   );
+  const [tileDensity, setTileDensityState] = useState<TileDensity>(() =>
+    loadDensity(),
+  );
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [minTileWarning, setMinTileWarning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -2021,6 +2064,11 @@ export default function App() {
   const setDragEnabled = useCallback((v: boolean) => {
     setDragEnabledState(v);
     saveDragEnabled(v);
+  }, []);
+
+  const setTileDensity = useCallback((v: TileDensity) => {
+    setTileDensityState(v);
+    saveDensity(v);
   }, []);
 
   const setUnits = useCallback((next: UnitSettings) => {
@@ -2042,6 +2090,37 @@ export default function App() {
     activeIndex: activeTileIndex,
     overIndex: overTileIndex,
   } = useSortable(tileOrder, setTileOrder, conditionGridRef, dragEnabled);
+
+  // Wide tiles section (tide + forecast) — separate sortable for their relative order
+  const WIDE_TILE_IDS: TileId[] = ["tide", "forecast"];
+  const wideTileOrder = useMemo(
+    () => tileOrder.filter((id) => WIDE_TILE_IDS.includes(id)),
+    [tileOrder],
+  );
+  const regularTileOrder = useMemo(
+    () => tileOrder.filter((id) => !WIDE_TILE_IDS.includes(id)),
+    [tileOrder],
+  );
+  const wideTilesRef = useRef<HTMLDivElement | null>(null);
+  const handleWideTileReorder = useCallback(
+    (newWideTiles: TileId[]) => {
+      // Rebuild full tileOrder: keep regular tiles in position, swap wide tiles
+      const next = tileOrder.filter((id) => !WIDE_TILE_IDS.includes(id));
+      // Append wide tiles in new order
+      setTileOrder([...next, ...newWideTiles]);
+    },
+    [tileOrder, setTileOrder],
+  );
+  const {
+    getHandlers: getWideTileHandlers,
+    activeIndex: activeWideTileIndex,
+    overIndex: overWideTileIndex,
+  } = useSortable(
+    wideTileOrder,
+    handleWideTileReorder,
+    wideTilesRef,
+    dragEnabled,
+  );
 
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -2248,6 +2327,7 @@ export default function App() {
     (tileId: TileId) => {
       const noData = !data || !effective;
       const isSelectedDayMode = !!selectedDay;
+      const d = tileDensity;
       switch (tileId) {
         case "wave":
           return (
@@ -2259,6 +2339,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={1}
               unavailable={noData}
+              density={d}
             />
           );
         case "wind":
@@ -2271,6 +2352,7 @@ export default function App() {
               icon={<Wind size={14} />}
               decimals={1}
               unavailable={noData}
+              density={d}
             />
           );
         case "direction":
@@ -2284,10 +2366,11 @@ export default function App() {
                 icon={<Wind size={14} />}
                 decimals={0}
                 unavailable={true}
+                density={d}
               />
             );
           }
-          return <CompassCard degrees={effective.windDirection} />;
+          return <CompassCard degrees={effective.windDirection} density={d} />;
         case "waterTemp":
           return (
             <StatCard
@@ -2298,6 +2381,7 @@ export default function App() {
               icon={<Thermometer size={14} />}
               decimals={0}
               unavailable={noData}
+              density={d}
             />
           );
         case "airTemp":
@@ -2310,6 +2394,7 @@ export default function App() {
               icon={<Thermometer size={14} />}
               decimals={0}
               unavailable={noData}
+              density={d}
             />
           );
         case "period":
@@ -2322,6 +2407,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={0}
               unavailable={noData}
+              density={d}
             />
           );
         case "tide":
@@ -2477,6 +2563,7 @@ export default function App() {
               icon={<Zap size={14} />}
               decimals={1}
               unavailable={noData || data.windGust === undefined}
+              density={d}
             />
           );
         case "windSpeed80m":
@@ -2489,6 +2576,7 @@ export default function App() {
               icon={<Wind size={14} />}
               decimals={1}
               unavailable={noData || data.windSpeed80m === undefined}
+              density={d}
             />
           );
         case "pressure":
@@ -2501,6 +2589,7 @@ export default function App() {
               icon={<Gauge size={14} />}
               decimals={pressureDecimals}
               unavailable={noData || data.pressure === undefined}
+              density={d}
             />
           );
         case "visibility":
@@ -2513,6 +2602,7 @@ export default function App() {
               icon={<Eye size={14} />}
               decimals={1}
               unavailable={noData || data.visibility === undefined}
+              density={d}
             />
           );
         case "humidity":
@@ -2525,6 +2615,7 @@ export default function App() {
               icon={<Droplets size={14} />}
               decimals={0}
               unavailable={noData || data.humidity === undefined}
+              density={d}
             />
           );
         case "dewPoint":
@@ -2537,6 +2628,7 @@ export default function App() {
               icon={<Droplets size={14} />}
               decimals={0}
               unavailable={noData || data.dewPoint === undefined}
+              density={d}
             />
           );
         case "uvIndex": {
@@ -2550,6 +2642,7 @@ export default function App() {
               icon={<Sun size={14} />}
               decimals={0}
               unavailable={noData || (!noData && data.uvIndex === undefined)}
+              density={d}
             />
           );
         }
@@ -2563,6 +2656,7 @@ export default function App() {
               icon={<Cloud size={14} />}
               decimals={0}
               unavailable={noData || data.cloudCover === undefined}
+              density={d}
             />
           );
         case "precipitation": {
@@ -2578,6 +2672,7 @@ export default function App() {
               unavailable={
                 noData || (!noData && data.precipitation === undefined)
               }
+              density={d}
             />
           );
         }
@@ -2591,6 +2686,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={1}
               unavailable={noData || data.swellHeight === undefined}
+              density={d}
             />
           );
         case "swellPeriod2":
@@ -2603,6 +2699,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={0}
               unavailable={noData || data.swellPeriod2 === undefined}
+              density={d}
             />
           );
         case "windWaveHeight":
@@ -2615,6 +2712,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={1}
               unavailable={noData || data.windWaveHeight === undefined}
+              density={d}
             />
           );
         case "windWavePeriod":
@@ -2627,6 +2725,7 @@ export default function App() {
               icon={<Waves size={14} />}
               decimals={0}
               unavailable={noData || data.windWavePeriod === undefined}
+              density={d}
             />
           );
         case "seaTemp":
@@ -2639,6 +2738,7 @@ export default function App() {
               icon={<Thermometer size={14} />}
               decimals={0}
               unavailable={noData || data.seaTemp === undefined}
+              density={d}
             />
           );
         case "sunrise":
@@ -2652,6 +2752,7 @@ export default function App() {
                 icon={<Sunrise size={14} />}
                 decimals={0}
                 unavailable={true}
+                density={d}
               />
             );
           }
@@ -2660,6 +2761,7 @@ export default function App() {
               label="Sunrise"
               value={data.sunrise ?? "—"}
               icon={<Sunrise size={14} />}
+              density={d}
             />
           );
         case "sunset":
@@ -2673,6 +2775,7 @@ export default function App() {
                 icon={<Sunset size={14} />}
                 decimals={0}
                 unavailable={true}
+                density={d}
               />
             );
           }
@@ -2681,6 +2784,7 @@ export default function App() {
               label="Sunset"
               value={data.sunset ?? "—"}
               icon={<Sunset size={14} />}
+              density={d}
             />
           );
         default:
@@ -2691,6 +2795,7 @@ export default function App() {
       data,
       effective,
       selectedDay,
+      tileDensity,
       displayHeight,
       heightLabel,
       displayTemp,
@@ -2836,6 +2941,37 @@ export default function App() {
                     aria-label="Toggle drag to reorder"
                   />
                 </div>
+              </div>
+
+              {/* Tile Density toggle */}
+              <div className="space-y-3">
+                <p
+                  className="font-body text-xs tracking-widest uppercase font-semibold"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.6 }}
+                >
+                  Tile Density
+                </p>
+                <div className="flex gap-2">
+                  {(["compact", "relaxed"] as TileDensity[]).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setTileDensity(opt)}
+                      className="flex-1 rounded-xl py-3 font-body text-sm font-semibold transition-all duration-200"
+                      style={unitBtnStyle(tileDensity === opt)}
+                    >
+                      {opt === "compact" ? "Compact" : "Relaxed"}
+                    </button>
+                  ))}
+                </div>
+                <p
+                  className="font-body text-xs px-1"
+                  style={{ color: "var(--color-seafoam)", opacity: 0.45 }}
+                >
+                  {tileDensity === "compact"
+                    ? "Smaller tiles, more data at a glance"
+                    : "Taller tiles with larger text for easy reading"}
+                </p>
               </div>
 
               <hr style={{ borderColor: "rgba(13,79,110,0.3)" }} />
@@ -3202,24 +3338,95 @@ export default function App() {
                       </button>
                     )}
                   </div>
+
+                  {/* ── Regular condition tiles grid ── */}
                   <div
                     ref={conditionGridRef}
                     className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
+                    style={{
+                      gridAutoRows:
+                        tileDensity === "relaxed"
+                          ? "clamp(100px, 13vw, 130px)"
+                          : "clamp(82px, 11vw, 108px)",
+                    }}
                   >
-                    {tileOrder.map((tileId, idx) => {
-                      const isWide = tileId === "tide" || tileId === "forecast";
+                    {regularTileOrder.map((tileId, idx) => {
                       const tileContent = renderTile(tileId);
-                      // Only skip unknown tile ids (renderTile returns null for default case)
                       if (tileContent === null) return null;
+
+                      // Auto-wide: if combined value+unit > 6 chars → col-span-2
+                      let autoWide = false;
+                      if (data && effective) {
+                        let valStr = "";
+                        switch (tileId) {
+                          case "wave":
+                            valStr = `${displayHeight(effective.waveHeight).toFixed(1)}${heightLabel}`;
+                            break;
+                          case "wind":
+                            valStr = `${displaySpeed(effective.windSpeed).toFixed(1)}${speedLabel}`;
+                            break;
+                          case "direction":
+                            valStr = degreesToCompass(effective.windDirection);
+                            break;
+                          case "waterTemp":
+                            valStr = `${displayTemp(data.waterTemp).toFixed(0)}${tempLabel}`;
+                            break;
+                          case "airTemp":
+                            valStr = `${displayTemp(data.airTemp).toFixed(0)}${tempLabel}`;
+                            break;
+                          case "period":
+                            valStr = `${effective.swellPeriod.toFixed(0)}s`;
+                            break;
+                          case "pressure":
+                            valStr = `${displayPressure(data.pressure ?? 0).toFixed(pressureDecimals)}${pressureLabel}`;
+                            break;
+                          case "visibility":
+                            valStr = `${displayDistance(data.visibility ?? 0).toFixed(1)}${distanceLabel}`;
+                            break;
+                          case "humidity":
+                            valStr = `${data.humidity ?? 0}%`;
+                            break;
+                          case "dewPoint":
+                            valStr = `${displayTemp(data.dewPoint ?? 0).toFixed(0)}${tempLabel}`;
+                            break;
+                          case "windGust":
+                            valStr = `${displaySpeed(data.windGust ?? 0).toFixed(1)}${speedLabel}`;
+                            break;
+                          case "windSpeed80m":
+                            valStr = `${displaySpeed(data.windSpeed80m ?? 0).toFixed(1)}${speedLabel}`;
+                            break;
+                          case "swellHeight":
+                            valStr = `${displayHeight(data.swellHeight ?? 0).toFixed(1)}${heightLabel}`;
+                            break;
+                          case "swellPeriod2":
+                            valStr = `${data.swellPeriod2 ?? 0}s`;
+                            break;
+                          case "windWaveHeight":
+                            valStr = `${displayHeight(data.windWaveHeight ?? 0).toFixed(1)}${heightLabel}`;
+                            break;
+                          case "windWavePeriod":
+                            valStr = `${data.windWavePeriod ?? 0}s`;
+                            break;
+                          case "seaTemp":
+                            valStr = `${displayTemp(data.seaTemp ?? 0).toFixed(0)}${tempLabel}`;
+                            break;
+                          case "sunrise":
+                            valStr = data.sunrise ?? "";
+                            break;
+                          case "sunset":
+                            valStr = data.sunset ?? "";
+                            break;
+                          default:
+                            valStr = "";
+                        }
+                        autoWide = valStr.length > 6;
+                      }
+
                       return (
                         <div
                           key={tileId}
                           {...getTileHandlers(idx)}
-                          className={
-                            isWide
-                              ? "col-span-2 sm:col-span-3 lg:col-span-4 xl:col-span-5"
-                              : "aspect-[4/3]"
-                          }
+                          className={autoWide ? "col-span-2" : ""}
                           style={{
                             cursor: dragEnabled
                               ? activeTileIndex === idx
@@ -3244,6 +3451,47 @@ export default function App() {
                       );
                     })}
                   </div>
+
+                  {/* ── Wide tiles: tide chart + 7-day forecast as full-width blocks ── */}
+                  {wideTileOrder.length > 0 && (
+                    <div
+                      ref={wideTilesRef}
+                      className="flex flex-col gap-3 mt-3"
+                    >
+                      {wideTileOrder.map((tileId, idx) => {
+                        const tileContent = renderTile(tileId);
+                        if (tileContent === null) return null;
+                        return (
+                          <div
+                            key={tileId}
+                            {...getWideTileHandlers(idx)}
+                            style={{
+                              cursor: dragEnabled
+                                ? activeWideTileIndex === idx
+                                  ? "grabbing"
+                                  : "grab"
+                                : "default",
+                              opacity: activeWideTileIndex === idx ? 0.5 : 1,
+                              outline:
+                                overWideTileIndex === idx &&
+                                activeWideTileIndex !== idx
+                                  ? "2px solid var(--color-electric)"
+                                  : "none",
+                              outlineOffset: "2px",
+                              borderRadius: "12px",
+                              transition:
+                                "opacity 0.15s ease, outline 0.15s ease",
+                              touchAction: dragEnabled ? "none" : "auto",
+                            }}
+                            data-ocid={`conditions.wide.${idx + 1}`}
+                          >
+                            {tileContent}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {dragEnabled && (
                     <p
                       className="text-xs mt-2 text-center"
